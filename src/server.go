@@ -23,9 +23,10 @@ var upgrader = websocket.Upgrader{
 }
 
 type Player struct {
-	transform string
-	name      string
-	websocket *websocket.Conn
+	transform        string
+	name             string
+	websocket        *websocket.Conn
+	currentlyWriting bool
 }
 
 type Room struct {
@@ -50,7 +51,6 @@ func reader(conn *websocket.Conn) {
 		}
 		// print out that message for clarity
 		decodeClientMessage(p)
-
 		if err := conn.WriteMessage(messageType, p); err != nil {
 			log.Println(err)
 			return
@@ -75,7 +75,7 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	// listen indefinitely for new messages coming
 	// through on our WebSocket connection
-	reader(ws)
+	go reader(ws)
 }
 
 func setupRoutes() {
@@ -84,7 +84,7 @@ func setupRoutes() {
 }
 
 func main() {
-	fmt.Println("Listening on localhost:8080")
+	fmt.Println("Listening on localhost:8081")
 	setupRoutes()
 	log.Fatal(http.ListenAndServe(":8081", nil))
 }
@@ -170,7 +170,11 @@ func getNamesInRoom(roomId string) []byte {
 
 func broadcast(roomId string, message string) {
 	for _, v := range rooms[roomId].players {
-		v.websocket.WriteMessage(1, []byte(message))
+		if !v.currentlyWriting {
+			v.currentlyWriting = true
+			v.websocket.WriteMessage(1, []byte(message))
+			v.currentlyWriting = false
+		}
 	}
 }
 
