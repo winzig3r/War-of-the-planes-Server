@@ -44,18 +44,13 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 func reader(conn *websocket.Conn) {
 	for {
 		// read in a message
-		messageType, p, err := conn.ReadMessage()
+		_, p, err := conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		// print out that message for clarity
 		decodeClientMessage(p)
-		if err := conn.WriteMessage(messageType, p); err != nil {
-			log.Println(err)
-			return
-		}
-
 	}
 }
 
@@ -68,7 +63,6 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
-
 	handleNewPlayer(ws)
 	if err != nil {
 		log.Println(err)
@@ -84,9 +78,9 @@ func setupRoutes() {
 }
 
 func main() {
-	fmt.Println("Listening on localhost:8081")
+	fmt.Println("Listening on localhost:6942")
 	setupRoutes()
-	log.Fatal(http.ListenAndServe(":8081", nil))
+	log.Fatal(http.ListenAndServe(":6942", nil))
 }
 
 func decodeClientMessage(message_raw []byte) {
@@ -97,19 +91,19 @@ func decodeClientMessage(message_raw []byte) {
 		mesageType := fmt.Sprintf("%v", message["type"])
 		switch mesageType {
 		case "createRoom":
+			pId := fmt.Sprintf("%v", message["Id"])
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
 			if len(playerName) == 0 {
 				playerName = getRandomName("C:/Users/vince/Programming/JavaScript/WebSocketServer/names.txt")
 			}
-			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[fmt.Sprintf("%v", message["Id"])], transform: "0"}
-			playerInfo := map[string]Player{fmt.Sprintf("%v", message["Id"]): newPlayer}
+			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0"}
+			playerInfo := map[string]Player{pId: newPlayer}
 			newRoom := Room{players: playerInfo}
 			rooms[newRoomId] = &newRoom
-			delete(playersWithoutRoom, fmt.Sprintf("%v", message["Id"]))
+			delete(playersWithoutRoom, pId)
 			broadcast(newRoomId, "{\"type\":\"nameList\", \"names\":"+string(getNamesInRoom(newRoomId))+"}")
-			rooms[newRoomId].players[fmt.Sprintf("%v", message["Id"])].websocket.WriteMessage(1, []byte("{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\"}"))
-
+			sendMessage("{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\"}", newRoomId, pId)
 		case "joinRoom":
 			pId := fmt.Sprintf("%v", message["Id"])
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -126,9 +120,9 @@ func decodeClientMessage(message_raw []byte) {
 				delete(playersWithoutRoom, pId)
 				//Informing the client itself and the clients who already were in the room
 				broadcast(roomId, "{\"type\":\"nameList\", \"names\":"+string(getNamesInRoom(roomId))+"}")
-				rooms[roomId].players[pId].websocket.WriteMessage(1, []byte("{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\"}"))
+				sendMessage("{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\"}", roomId, pId)
 			} else {
-				playersWithoutRoom[pId].WriteMessage(1, []byte("{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}"))
+				sendMessage("{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}", roomId, pId)
 			}
 		case "transformUpdate":
 			pId := fmt.Sprintf("%v", message["playerId"])
@@ -138,8 +132,31 @@ func decodeClientMessage(message_raw []byte) {
 			modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
 			rooms[roomId].players[pId] = modifiedPlayer
 			updateClientTransforms(roomId)
+		case "clientDisconnected":
+			disconnectClient(fmt.Sprintf("%v", message["roomId"]), fmt.Sprintf("%v", message["Id"]))
+		case "completeDelete":
+			pId := fmt.Sprintf("%v", message["playerId"])
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			if len(roomId) > 0 {
+				disconnectClient(roomId, pId)
+			}
+			delete(playersWithoutRoom, pId)
 		}
 	}
+}
+
+func disconnectClient(roomId string, playerId string) {
+	broadcast(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+playerId+"\"}")
+	playersWithoutRoom[playerId] = rooms[roomId].players[playerId].websocket
+	delete(rooms[roomId].players, playerId)
+	fmt.Print("Player " + playerId + " disconnected")
+	//Deleting the room if nobody is in it anymore
+	if len(rooms[roomId].players) == 0 {
+		delete(rooms, roomId)
+		fmt.Println(" and room " + roomId + " got deleted because nobody was in it anymore")
+		return
+	}
+	fmt.Println()
 }
 
 func updateClientTransforms(roomId string) {
@@ -168,6 +185,17 @@ func getNamesInRoom(roomId string) []byte {
 	return jsonString
 }
 
+func sendMessage(message string, roomId string, playerId string) {
+	player := rooms[roomId].players[playerId]
+	if !player.currentlyWriting {
+		player.currentlyWriting = true
+		player.websocket.WriteMessage(1, []byte(message))
+		player.currentlyWriting = false
+	} else {
+		sendMessage(message, roomId, playerId)
+	}
+}
+
 func broadcast(roomId string, message string) {
 	for _, v := range rooms[roomId].players {
 		if !v.currentlyWriting {
@@ -181,6 +209,7 @@ func broadcast(roomId string, message string) {
 func handleNewPlayer(conn *websocket.Conn) {
 	newId := getNewPlayerId()
 	conn.WriteMessage(1, []byte("{\"type\":\"setId\", \"newId\":\""+newId+"\"}"))
+	fmt.Println("Client connected and has now Id: " + newId)
 	playersWithoutRoom[newId] = conn
 }
 
