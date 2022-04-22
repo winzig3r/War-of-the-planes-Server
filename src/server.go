@@ -231,18 +231,24 @@ func handleNewPlayer(conn *websocket.Conn) {
 }
 
 func getNewPlayerId() int {
-	allPlayerIds = append(allPlayerIds, allPlayerIds[len(allPlayerIds)-1]+1)
+	var newId int
+	if len(allPlayerIds) > 0 {
+		newId = allPlayerIds[len(allPlayerIds)-1] + 1
+	} else {
+		newId = 69
+	}
+	allPlayerIds = append(allPlayerIds, newId)
 	return allPlayerIds[len(allPlayerIds)-1]
 }
 
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
+// func stringInSlice(a string, list []string) bool {
+// 	for _, b := range list {
+// 		if b == a {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 func getRandomRoomId() string {
 	rand.Seed(time.Now().UnixNano())
