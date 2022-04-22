@@ -182,11 +182,13 @@ func disconnectClient(roomId string, playerId string) {
 }
 
 func updateClientTransforms(roomId string) {
+	mutex.Lock()
 	transforms := map[string]string{}
 	playersCopy := &rooms[roomId].players
 	for k, v := range *playersCopy {
 		transforms[k] = v.transform
 	}
+	mutex.Unlock()
 	jsonString, e := json.Marshal(transforms)
 	if e != nil {
 		fmt.Println("Something went wrong with getting the transforms")
