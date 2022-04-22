@@ -34,7 +34,7 @@ type Room struct {
 }
 
 var mutex = &sync.Mutex{}
-var namesFileLocation = "C:/Users/vince/Programming/JavaScript/WebSocketServer/names.txt"
+var namesFileLocation = "names.txt"
 var port = 6942
 var names []string
 var allPlayerIds []string
