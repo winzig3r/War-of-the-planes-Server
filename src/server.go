@@ -215,7 +215,6 @@ func send(p *Player, message string) error {
 
 func broadcast(roomId string, message string) {
 	for _, v := range rooms[roomId].players {
-		v.websocket.WriteMessage(1, []byte(message))
 		send(&v, message)
 	}
 }
