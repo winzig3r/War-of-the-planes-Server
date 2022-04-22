@@ -30,16 +30,16 @@ type Player struct {
 }
 
 type Room struct {
-	players map[string]Player
+	players map[int]Player
 }
 
 var mutex = &sync.Mutex{}
 var namesFileLocation = "names.txt"
 var port = 6942
 var names []string
-var allPlayerIds []string
+var allPlayerIds []int
 var rooms = map[string]*Room{}
-var playersWithoutRoom = map[string]*websocket.Conn{}
+var playersWithoutRoom = map[int]*websocket.Conn{}
 
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Home Page")
@@ -96,7 +96,7 @@ func decodeClientMessage(message_raw []byte) {
 		mesageType := fmt.Sprintf("%v", message["type"])
 		switch mesageType {
 		case "createRoom":
-			pId := fmt.Sprintf("%v", message["Id"])
+			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
 			if len(playerName) == 0 {
@@ -104,7 +104,7 @@ func decodeClientMessage(message_raw []byte) {
 				playerName = names[rand.Intn(len(names)-1)]
 			}
 			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0"}
-			playerInfo := map[string]Player{pId: newPlayer}
+			playerInfo := map[int]Player{pId: newPlayer}
 			newRoom := Room{players: playerInfo}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
@@ -115,7 +115,7 @@ func decodeClientMessage(message_raw []byte) {
 			currentPlayer := rooms[newRoomId].players[pId]
 			send(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\"}")
 		case "joinRoom":
-			pId := fmt.Sprintf("%v", message["Id"])
+			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerName := fmt.Sprintf("%v", message["name"])
 			if len(playerName) == 0 {
@@ -141,7 +141,7 @@ func decodeClientMessage(message_raw []byte) {
 				send(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
 			}
 		case "transformUpdate":
-			pId := fmt.Sprintf("%v", message["playerId"])
+			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			//fmt.Println("Trying to update transforms in room " + roomId)
 			modifiedPlayer := rooms[roomId].players[pId]
@@ -151,9 +151,10 @@ func decodeClientMessage(message_raw []byte) {
 			mutex.Unlock()
 			updateClientTransforms(roomId)
 		case "clientDisconnected":
-			disconnectClient(fmt.Sprintf("%v", message["roomId"]), fmt.Sprintf("%v", message["Id"]))
+			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			disconnectClient(fmt.Sprintf("%v", message["roomId"]), disconnectedPlayerId)
 		case "completeDelete":
-			pId := fmt.Sprintf("%v", message["playerId"])
+			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			if len(roomId) > 0 {
 				disconnectClient(roomId, pId)
@@ -163,13 +164,13 @@ func decodeClientMessage(message_raw []byte) {
 	}
 }
 
-func disconnectClient(roomId string, playerId string) {
-	broadcast(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+playerId+"\"}")
+func disconnectClient(roomId string, playerId int) {
+	broadcast(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+strconv.Itoa(playerId)+"\"}")
 	mutex.Lock()
 	playersWithoutRoom[playerId] = rooms[roomId].players[playerId].websocket
 	delete(rooms[roomId].players, playerId)
 	mutex.Unlock()
-	fmt.Print("Player " + playerId + " disconnected")
+	fmt.Print("Player " + strconv.Itoa(playerId) + " disconnected")
 	//Deleting the room if nobody is in it anymore
 	if len(rooms[roomId].players) == 0 {
 		mutex.Lock()
@@ -183,7 +184,7 @@ func disconnectClient(roomId string, playerId string) {
 
 func updateClientTransforms(roomId string) {
 	mutex.Lock()
-	transforms := map[string]string{}
+	transforms := map[int]string{}
 	playersCopy := &rooms[roomId].players
 	for k, v := range *playersCopy {
 		transforms[k] = v.transform
@@ -198,7 +199,7 @@ func updateClientTransforms(roomId string) {
 }
 
 func getNamesInRoom(roomId string) []byte {
-	var names = map[string]string{}
+	var names = map[int]string{}
 	for k, v := range rooms[roomId].players {
 		names[k] = v.name
 	}
@@ -224,20 +225,14 @@ func broadcast(roomId string, message string) {
 
 func handleNewPlayer(conn *websocket.Conn) {
 	newId := getNewPlayerId()
-	conn.WriteMessage(1, []byte("{\"type\":\"setId\", \"newId\":\""+newId+"\"}"))
-	fmt.Println("Client connected and has now Id: " + newId)
+	conn.WriteMessage(1, []byte("{\"type\":\"setId\", \"newId\":\""+strconv.Itoa(newId)+"\"}"))
+	fmt.Println("Client connected and has now Id: " + strconv.Itoa(newId))
 	playersWithoutRoom[newId] = conn
 }
 
-func getNewPlayerId() string {
-	rand.Seed(time.Now().UnixNano())
-	randomValue := "player " + strconv.Itoa(rand.Intn(999999-100000)+100000)
-	if stringInSlice(randomValue, allPlayerIds) {
-		return getNewPlayerId()
-	} else {
-		allPlayerIds = append(allPlayerIds, randomValue)
-		return randomValue
-	}
+func getNewPlayerId() int {
+	allPlayerIds = append(allPlayerIds, allPlayerIds[len(allPlayerIds)-1]+1)
+	return allPlayerIds[len(allPlayerIds)-1]
 }
 
 func stringInSlice(a string, list []string) bool {
