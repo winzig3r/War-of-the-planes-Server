@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,19 +24,22 @@ var upgrader = websocket.Upgrader{
 }
 
 type Player struct {
-	transform        string
-	name             string
-	websocket        *websocket.Conn
-	currentlyWriting bool
+	transform string
+	name      string
+	websocket *websocket.Conn
 }
 
 type Room struct {
 	players map[string]Player
 }
 
+var mutex = &sync.Mutex{}
+var namesFileLocation = "C:/Users/vince/Programming/JavaScript/WebSocketServer/names.txt"
+var port = 6942
+var names []string
+var allPlayerIds []string
 var rooms = map[string]*Room{}
 var playersWithoutRoom = map[string]*websocket.Conn{}
-var allPlayerIds []string
 
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Home Page")
@@ -78,9 +82,10 @@ func setupRoutes() {
 }
 
 func main() {
-	fmt.Println("Listening on localhost:6942")
+	names = getNamesFromFile(namesFileLocation)
+	fmt.Println("Listening on localhost: " + strconv.Itoa(port))
 	setupRoutes()
-	log.Fatal(http.ListenAndServe(":6942", nil))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), nil))
 }
 
 func decodeClientMessage(message_raw []byte) {
@@ -95,34 +100,45 @@ func decodeClientMessage(message_raw []byte) {
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
 			if len(playerName) == 0 {
-				playerName = getRandomName("C:/Users/vince/Programming/JavaScript/WebSocketServer/names.txt")
+				rand.Seed(time.Now().UnixNano())
+				playerName = names[rand.Intn(len(names)-1)]
 			}
 			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0"}
 			playerInfo := map[string]Player{pId: newPlayer}
 			newRoom := Room{players: playerInfo}
+			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, pId)
+			mutex.Unlock()
 			broadcast(newRoomId, "{\"type\":\"nameList\", \"names\":"+string(getNamesInRoom(newRoomId))+"}")
-			sendMessage("{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\"}", newRoomId, pId)
+
+			currentPlayer := rooms[newRoomId].players[pId]
+			send(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\"}")
 		case "joinRoom":
 			pId := fmt.Sprintf("%v", message["Id"])
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerName := fmt.Sprintf("%v", message["name"])
 			if len(playerName) == 0 {
-				playerName = getRandomName("C:/Users/vince/Programming/JavaScript/WebSocketServer/names.txt")
+				rand.Seed(time.Now().UnixNano())
+				playerName = names[rand.Intn(len(names)-1)]
 			}
 			if _, ok := rooms[roomId]; ok {
 				//Setting up a new Player Object
 				newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0"}
 				//Moving the new Player Object into the room
+				mutex.Lock()
 				rooms[roomId].players[pId] = newPlayer
 				//Deleting the playerId out of the playersWithoutRoom
 				delete(playersWithoutRoom, pId)
+				mutex.Unlock()
 				//Informing the client itself and the clients who already were in the room
 				broadcast(roomId, "{\"type\":\"nameList\", \"names\":"+string(getNamesInRoom(roomId))+"}")
-				sendMessage("{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\"}", roomId, pId)
+
+				currentPlayer := rooms[roomId].players[pId]
+				send(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\"}")
 			} else {
-				sendMessage("{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}", roomId, pId)
+				currentPlayer := rooms[roomId].players[pId]
+				send(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
 			}
 		case "transformUpdate":
 			pId := fmt.Sprintf("%v", message["playerId"])
@@ -130,7 +146,9 @@ func decodeClientMessage(message_raw []byte) {
 			//fmt.Println("Trying to update transforms in room " + roomId)
 			modifiedPlayer := rooms[roomId].players[pId]
 			modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
+			mutex.Lock()
 			rooms[roomId].players[pId] = modifiedPlayer
+			mutex.Unlock()
 			updateClientTransforms(roomId)
 		case "clientDisconnected":
 			disconnectClient(fmt.Sprintf("%v", message["roomId"]), fmt.Sprintf("%v", message["Id"]))
@@ -147,12 +165,16 @@ func decodeClientMessage(message_raw []byte) {
 
 func disconnectClient(roomId string, playerId string) {
 	broadcast(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+playerId+"\"}")
+	mutex.Lock()
 	playersWithoutRoom[playerId] = rooms[roomId].players[playerId].websocket
 	delete(rooms[roomId].players, playerId)
+	mutex.Unlock()
 	fmt.Print("Player " + playerId + " disconnected")
 	//Deleting the room if nobody is in it anymore
 	if len(rooms[roomId].players) == 0 {
+		mutex.Lock()
 		delete(rooms, roomId)
+		mutex.Unlock()
 		fmt.Println(" and room " + roomId + " got deleted because nobody was in it anymore")
 		return
 	}
@@ -185,24 +207,16 @@ func getNamesInRoom(roomId string) []byte {
 	return jsonString
 }
 
-func sendMessage(message string, roomId string, playerId string) {
-	player := rooms[roomId].players[playerId]
-	if !player.currentlyWriting {
-		player.currentlyWriting = true
-		player.websocket.WriteMessage(1, []byte(message))
-		player.currentlyWriting = false
-	} else {
-		sendMessage(message, roomId, playerId)
-	}
+func send(p *Player, message string) error {
+	mutex.Lock()
+	defer mutex.Unlock()
+	return p.websocket.WriteMessage(1, []byte(message))
 }
 
 func broadcast(roomId string, message string) {
 	for _, v := range rooms[roomId].players {
-		if !v.currentlyWriting {
-			v.currentlyWriting = true
-			v.websocket.WriteMessage(1, []byte(message))
-			v.currentlyWriting = false
-		}
+		v.websocket.WriteMessage(1, []byte(message))
+		send(&v, message)
 	}
 }
 
@@ -247,8 +261,7 @@ func getRandomRoomId() string {
 	}
 }
 
-func getRandomName(file string) string {
-	rand.Seed(time.Now().UnixNano())
+func getNamesFromFile(file string) []string {
 	var result = []string{}
 	f, err := os.Open(file)
 
@@ -267,5 +280,6 @@ func getRandomName(file string) string {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
-	return result[rand.Intn(len(result)-1)]
+	//return result[rand.Intn(len(result)-1)]
+	return result
 }
