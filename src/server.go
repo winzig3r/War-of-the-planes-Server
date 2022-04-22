@@ -183,8 +183,8 @@ func disconnectClient(roomId string, playerId string) {
 
 func updateClientTransforms(roomId string) {
 	transforms := map[string]string{}
-	playersCopy := rooms[roomId].players
-	for k, v := range playersCopy {
+	playersCopy := &rooms[roomId].players
+	for k, v := range *playersCopy {
 		transforms[k] = v.transform
 	}
 	jsonString, e := json.Marshal(transforms)
