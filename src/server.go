@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -144,12 +143,30 @@ func decodeClientMessage(message_raw []byte) {
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			//fmt.Println("Trying to update transforms in room " + roomId)
+			mutex.Lock()
 			modifiedPlayer := rooms[roomId].players[pId]
 			modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
-			mutex.Lock()
 			rooms[roomId].players[pId] = modifiedPlayer
 			mutex.Unlock()
 			updateClientTransforms(roomId)
+		case "shootRequest":
+			//Getting the Id of the room the bullet was shoot in
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			//Getting the startPos of the bullet
+			startPos := (message["bulletStartPosition"]).(map[string]interface{})
+			xStart := fmt.Sprintf("%v", startPos["x"])
+			yStart := fmt.Sprintf("%v", startPos["y"])
+			zStart := fmt.Sprintf("%v", startPos["z"])
+			//Getting the x, y and z position of the bullet after it was shot
+			endPos := (message["bulletEndPosition"]).(map[string]interface{})
+			xEnd := fmt.Sprintf("%v", endPos["x"])
+			yEnd := fmt.Sprintf("%v", endPos["y"])
+			zEnd := fmt.Sprintf("%v", endPos["z"])
+
+			//fmt.Println("Server End  : " + "[\"" + xEnd + "\", \"" + yEnd + "\", \"" + zEnd + "\"]")
+			//Updating the clients in the room
+			broadcast(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\"crappyBullet\", \"startPos\":[\""+xStart+"\", \""+yStart+"\", \""+zStart+"\"], \"endPos\":[\""+xEnd+"\", \""+yEnd+"\", \""+zEnd+"\"]}")
+
 		case "clientDisconnected":
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			disconnectClient(fmt.Sprintf("%v", message["roomId"]), disconnectedPlayerId)
@@ -221,6 +238,7 @@ func broadcast(roomId string, message string) {
 	for _, v := range rooms[roomId].players {
 		send(&v, message)
 	}
+
 }
 
 func handleNewPlayer(conn *websocket.Conn) {
@@ -251,17 +269,21 @@ func getNewPlayerId() int {
 // }
 
 func getRandomRoomId() string {
-	rand.Seed(time.Now().UnixNano())
-	alphabet := strings.ToUpper("abcdefghijklmnopqrstuvwxyz")
-	roomId := ""
-	for i := 0; i < 6; i++ {
-		roomId = roomId + string(alphabet[rand.Intn(len(alphabet)-1)])
-	}
-	if _, ok := rooms[roomId]; ok {
-		return getRandomRoomId()
-	} else {
-		return roomId
-	}
+	return "AAAAAA"
+	/*
+		ENABLE AFTER ENTKÄFERUNG
+		rand.Seed(time.Now().UnixNano())
+		alphabet := strings.ToUpper("abcdefghijklmnopqrstuvwxyz")
+		roomId := ""
+		for i := 0; i < 6; i++ {
+			roomId = roomId + string(alphabet[rand.Intn(len(alphabet)-1)])
+		}
+		if _, ok := rooms[roomId]; ok {
+			return getRandomRoomId()
+		} else {
+			return roomId
+		}
+	*/
 }
 
 func getNamesFromFile(file string) []string {
