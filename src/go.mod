@@ -1,4 +1,4 @@
-module server.go
+module TCPServer.go
 
 go 1.18
 
