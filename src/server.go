@@ -299,6 +299,12 @@ func sendUDP(p *Player, message string) {
 }
 
 func broadcastTCP(roomId string, message string) {
+	connectedPlayers := make(map[int]Player)
+	tcpMutex.Lock()
+	for key, value := range rooms[roomId].players {
+		connectedPlayers[key] = value
+	}
+	tcpMutex.Unlock()
 	for _, v := range rooms[roomId].players {
 		sendTCP(&v, message)
 	}
