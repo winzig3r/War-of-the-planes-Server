@@ -206,6 +206,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 		case "shootRequest":
 			//Getting the Id of the room the bullet was shoot in
 			roomId := fmt.Sprintf("%v", message["roomId"])
+			bulletType := fmt.Sprintf("%v", message["bulletType"])
 			//Getting the startPos of the bullet
 			startPos := (message["bulletStartPosition"]).(map[string]interface{})
 			xStart := fmt.Sprintf("%v", startPos["x"])
@@ -219,7 +220,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 
 			//fmt.Println("Server End  : " + "[\"" + xEnd + "\", \"" + yEnd + "\", \"" + zEnd + "\"]")
 			//Updating the clients in the room
-			broadcastTCP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\"crappyBullet\", \"startPos\":[\""+xStart+"\", \""+yStart+"\", \""+zStart+"\"], \"endPos\":[\""+xEnd+"\", \""+yEnd+"\", \""+zEnd+"\"]}")
+			broadcastTCP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\""+bulletType+"\", \"startPos\":[\""+xStart+"\", \""+yStart+"\", \""+zStart+"\"], \"endPos\":[\""+xEnd+"\", \""+yEnd+"\", \""+zEnd+"\"]}")
 
 		case "clientDisconnected":
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
@@ -339,15 +340,6 @@ func getNewPlayerId() int {
 	allPlayerIds = append(allPlayerIds, newId)
 	return allPlayerIds[len(allPlayerIds)-1]
 }
-
-// func stringInSlice(a string, list []string) bool {
-// 	for _, b := range list {
-// 		if b == a {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
 
 func getRandomRoomId() string {
 	return "AAAAAA"
