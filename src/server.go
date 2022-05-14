@@ -131,7 +131,7 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 		case "transformUpdate":
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
-			//fmt.Println("Trying to update transforms in room " + roomId)
+			//fmt.Println("Trying to update transform of player " + strconv.Itoa(pId) + " the new Transform is: " + fmt.Sprintf("%v", message["newTransform"]))
 			udpMutex.Lock()
 			//Setting the connection data if it is a new Connection
 			if rooms[roomId].players[pId].udpConn == nil {
