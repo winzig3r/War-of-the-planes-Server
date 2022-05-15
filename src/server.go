@@ -213,14 +213,14 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			yStart := fmt.Sprintf("%v", startPos["y"])
 			zStart := fmt.Sprintf("%v", startPos["z"])
 			//Getting the x, y and z position of the bullet after it was shot
-			endPos := (message["bulletEndPosition"]).(map[string]interface{})
-			xEnd := fmt.Sprintf("%v", endPos["x"])
-			yEnd := fmt.Sprintf("%v", endPos["y"])
-			zEnd := fmt.Sprintf("%v", endPos["z"])
+			endPos := (message["planeFacingDirection"]).(map[string]interface{})
+			xRelativeAngle := fmt.Sprintf("%v", endPos["x"])
+			yRelativeAngle := fmt.Sprintf("%v", endPos["y"])
+			zRelativeAngle := fmt.Sprintf("%v", endPos["z"])
 
 			//fmt.Println("Server End  : " + "[\"" + xEnd + "\", \"" + yEnd + "\", \"" + zEnd + "\"]")
 			//Updating the clients in the room
-			broadcastTCP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\""+bulletType+"\", \"startPos\":[\""+xStart+"\", \""+yStart+"\", \""+zStart+"\"], \"endPos\":[\""+xEnd+"\", \""+yEnd+"\", \""+zEnd+"\"]}")
+			broadcastTCP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\""+bulletType+"\", \"startPos\":[\""+xStart+"\", \""+yStart+"\", \""+zStart+"\"], \"planeFacingDirection\":[\""+xRelativeAngle+"\", \""+yRelativeAngle+"\", \""+zRelativeAngle+"\"]}")
 
 		case "clientDisconnected":
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
@@ -306,7 +306,7 @@ func broadcastTCP(roomId string, message string) {
 		connectedPlayers[key] = value
 	}
 	tcpMutex.Unlock()
-	for _, v := range rooms[roomId].players {
+	for _, v := range connectedPlayers {
 		sendTCP(&v, message)
 	}
 }
