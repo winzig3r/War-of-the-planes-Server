@@ -24,11 +24,12 @@ var upgrader = websocket.Upgrader{
 }
 
 type Player struct {
-	transform string
-	name      string
-	websocket *websocket.Conn
-	udpConn   net.PacketConn
-	udpAddr   net.Addr
+	transform     string
+	name          string
+	currentHealth int
+	websocket     *websocket.Conn
+	udpConn       net.PacketConn
+	udpAddr       net.Addr
 }
 
 type Room struct {
@@ -143,7 +144,9 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 			//Udpating the transform
 			modifiedPlayer := rooms[roomId].players[pId]
 			modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
+			tcpMutex.Lock()
 			rooms[roomId].players[pId] = modifiedPlayer
+			tcpMutex.Unlock()
 			udpMutex.Unlock()
 			//Informing the other clients
 			updateClientTransforms(roomId)
@@ -221,7 +224,8 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			//fmt.Println("Server End  : " + "[\"" + xEnd + "\", \"" + yEnd + "\", \"" + zEnd + "\"]")
 			//Updating the clients in the room
 			broadcastTCP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\""+bulletType+"\", \"startPos\":[\""+xStart+"\", \""+yStart+"\", \""+zStart+"\"], \"planeFacingDirection\":[\""+xRelativeAngle+"\", \""+yRelativeAngle+"\", \""+zRelativeAngle+"\"]}")
-
+		case "playerHit":
+			fmt.Println("Player was hit")
 		case "clientDisconnected":
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			disconnectClient(fmt.Sprintf("%v", message["roomId"]), disconnectedPlayerId)
