@@ -232,13 +232,15 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			//shooterId := fmt.Sprintf("%v", message["shooterId"])
 			damage, _ := strconv.Atoi(fmt.Sprintf("%v", message["damage"]))
 			//fmt.Println("The Player Id", playerId, "in room", roomId, "was shot by", shooterId, "and took", damage, "damage")
-			tcpMutex.Lock()
-			udpMutex.Lock()
-			shotPlayer := rooms[roomId].players[playerId]
-			shotPlayer.currentHealth -= damage
-			rooms[roomId].players[playerId] = shotPlayer
-			udpMutex.Unlock()
-			tcpMutex.Unlock()
+			/*
+				tcpMutex.Lock()
+				udpMutex.Lock()
+				shotPlayer := rooms[roomId].players[playerId]
+				shotPlayer.currentHealth -= damage
+				rooms[roomId].players[playerId] = shotPlayer
+				udpMutex.Unlock()
+				tcpMutex.Unlock()
+			*/
 			broadcastTCP(roomId, "{\"type\":\"playerHit\", \"hitPlayerId\":\""+strconv.Itoa(playerId)+"\", \"damage\":\""+strconv.Itoa(damage)+"\",}")
 		case "clientDisconnected":
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
