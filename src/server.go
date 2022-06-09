@@ -36,8 +36,8 @@ type Room struct {
 	players map[int]Player
 }
 
-const PORT_UDP = 6943
-const PORT_TCP = 6942
+const PORT_UDP = 9535
+const PORT_TCP = 9536
 
 var mutex = &sync.Mutex{}
 
