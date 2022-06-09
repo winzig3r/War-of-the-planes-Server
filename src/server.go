@@ -33,7 +33,8 @@ type Player struct {
 }
 
 type Room struct {
-	players map[int]Player
+	players     map[int]Player
+	deadPlayers map[int]Player
 }
 
 const PORT_UDP = 9535
@@ -59,6 +60,7 @@ func tcpReader(conn *websocket.Conn) {
 			return
 		}
 		decodeClientMessageOnTCP(p)
+		//time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -117,13 +119,14 @@ func startUDP() {
 			continue
 		}
 		go updReader(pc, addr, buf[:n])
+		//time.Sleep(10 * time.Millisecond)
 	}
 }
 
 func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, message_raw []byte) {
 	var message map[string]interface{}
 	if json.Unmarshal(message_raw, &message) != nil {
-		fmt.Println("Error decoding Message!")
+		fmt.Println("Error decoding Message: " + string(message_raw))
 	} else {
 		mesageType := fmt.Sprintf("%v", message["type"])
 		switch mesageType {
@@ -167,7 +170,8 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: 200}
 			playerInfo := map[int]Player{pId: newPlayer}
-			newRoom := Room{players: playerInfo}
+			deadPlayers := make(map[int]Player)
+			newRoom := Room{players: playerInfo, deadPlayers: deadPlayers}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, pId)
@@ -203,6 +207,10 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				currentPlayer := rooms[roomId].players[pId]
 				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
 			}
+		case "rejoin":
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			broadcastTCP(roomId, "{\"type\":\"rejoin\", \"playerId\":\""+strconv.Itoa(playerId)+"\"}")
 		case "shootBulletRequest":
 			//Getting generall information about the bullet
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -255,8 +263,22 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			shotPlayer.currentHealth -= damage
 			rooms[roomId].players[playerId] = shotPlayer
 			mutex.Unlock()
-
 			broadcastTCP(roomId, "{\"type\":\"playerHit\", \"hitPlayerId\":\""+strconv.Itoa(playerId)+"\", \"newHealth\":\""+strconv.Itoa(shotPlayer.currentHealth)+"\",}")
+
+		case "playerDied":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
+			shooterId := fmt.Sprintf("%v", message["shooterId"])
+			if deadPlayer, ok := rooms[roomId].players[playerId]; ok {
+				if deadPlayer.websocket != nil {
+					mutex.Lock()
+					rooms[roomId].deadPlayers[playerId] = deadPlayer
+					delete(rooms[roomId].players, playerId)
+					mutex.Unlock()
+					sendTCP(&deadPlayer, "{\"type\":\"playerDied\", \"deadPlayer\":\""+strconv.Itoa(playerId)+"\", \"killer\":\""+shooterId+"\"}")
+					broadcastTCP(roomId, "{\"type\":\"playerDied\", \"deadPlayer\":\""+strconv.Itoa(playerId)+"\", \"killer\":\""+shooterId+"\"}")
+				}
+			}
 		case "clientDisconnected":
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			disconnectClient(fmt.Sprintf("%v", message["roomId"]), disconnectedPlayerId)
@@ -291,7 +313,7 @@ func disconnectClient(roomId string, playerId int) {
 
 func updateClientTransforms(roomId string) {
 	mutex.Lock()
-	transforms := map[int]string{}
+	transforms := make(map[int]string)
 	playersCopy := &rooms[roomId].players
 	for k, v := range *playersCopy {
 		if len(v.transform) > 1 {
@@ -340,7 +362,11 @@ func getHealthInRoom(roomId string) []byte {
 func sendTCP(p *Player, message string) error {
 	mutex.Lock()
 	defer mutex.Unlock()
-	return p.websocket.WriteMessage(1, []byte(message))
+	if p.websocket == nil {
+		return nil
+	} else {
+		return p.websocket.WriteMessage(1, []byte(message))
+	}
 }
 
 func sendUDP(p *Player, message string) {
@@ -359,7 +385,9 @@ func broadcastTCP(roomId string, message string) {
 	}
 	mutex.Unlock()
 	for _, v := range connectedPlayers {
-		sendTCP(&v, message)
+		if v.websocket != nil {
+			sendTCP(&v, message)
+		}
 	}
 }
 
