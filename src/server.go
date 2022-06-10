@@ -27,6 +27,7 @@ type Player struct {
 	transform     string
 	name          string
 	currentHealth int
+	planeType     string
 	websocket     *websocket.Conn
 	udpConn       net.PacketConn
 	udpAddr       net.Addr
@@ -164,11 +165,13 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
+			planeType := fmt.Sprintf("%v", message["planeType"])
+			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			if len(playerName) == 0 {
 				rand.Seed(time.Now().UnixNano())
 				playerName = names[rand.Intn(len(names)-1)]
 			}
-			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: 200}
+			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: startHealth, planeType: planeType}
 			playerInfo := map[int]Player{pId: newPlayer}
 			deadPlayers := make(map[int]Player)
 			newRoom := Room{players: playerInfo, deadPlayers: deadPlayers}
@@ -176,22 +179,22 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, pId)
 			mutex.Unlock()
-			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+"}")
-
+			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
 			currentPlayer := rooms[newRoomId].players[pId]
 			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
 		case "joinRoom":
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerName := fmt.Sprintf("%v", message["name"])
-
+			planeType := fmt.Sprintf("%v", message["planeType"])
+			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			if len(playerName) == 0 {
 				rand.Seed(time.Now().UnixNano())
 				playerName = names[rand.Intn(len(names)-1)]
 			}
 			if _, ok := rooms[roomId]; ok {
 				//Setting up a new Player Object
-				newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: 100}
+				newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: startHealth, planeType: planeType}
 				//Moving the new Player Object into the room
 				mutex.Lock()
 				rooms[roomId].players[pId] = newPlayer
@@ -199,7 +202,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				delete(playersWithoutRoom, pId)
 				mutex.Unlock()
 				//Informing the client itself and the clients who already were in the room
-				broadcastTCP(roomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(roomId))+", \"healthValues\":"+string(getHealthInRoom(roomId))+"}")
+				broadcastTCP(roomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(roomId))+", \"healthValues\":"+string(getHealthInRoom(roomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(roomId))+"}")
 
 				currentPlayer := rooms[roomId].players[pId]
 				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
@@ -210,7 +213,14 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 		case "rejoin":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
-			broadcastTCP(roomId, "{\"type\":\"rejoin\", \"playerId\":\""+strconv.Itoa(playerId)+"\"}")
+			newHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["newHealth"]))
+			mutex.Lock()
+			rejoiningPlayer := rooms[roomId].deadPlayers[playerId]
+			rejoiningPlayer.currentHealth = newHealth
+			rooms[roomId].players[playerId] = rejoiningPlayer
+			delete(rooms[roomId].deadPlayers, playerId)
+			mutex.Unlock()
+			broadcastTCP(roomId, "{\"type\":\"rejoin\", \"playerId\":\""+strconv.Itoa(playerId)+"\", \"newHealth\":\""+strconv.Itoa(newHealth)+"\"}")
 		case "shootBulletRequest":
 			//Getting generall information about the bullet
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -316,7 +326,7 @@ func updateClientTransforms(roomId string) {
 	transforms := make(map[int]string)
 	playersCopy := &rooms[roomId].players
 	for k, v := range *playersCopy {
-		if len(v.transform) > 1 {
+		if len(v.transform) > 1 && v.websocket != nil {
 			transforms[k] = v.transform
 		}
 	}
@@ -330,13 +340,13 @@ func updateClientTransforms(roomId string) {
 }
 
 func getNamesInRoom(roomId string) []byte {
-	var names = map[int]string{}
+	var playerNames = map[int]string{}
 	mutex.Lock()
 	for playerId, player := range rooms[roomId].players {
-		names[playerId] = player.name
+		playerNames[playerId] = player.name
 	}
 	mutex.Unlock()
-	jsonString, e := json.Marshal(names)
+	jsonString, e := json.Marshal(playerNames)
 	if e != nil {
 		fmt.Println("Something went wrong with getting the names")
 		return nil
@@ -354,6 +364,21 @@ func getHealthInRoom(roomId string) []byte {
 	jsonString, e := json.Marshal(allPlayerHealth)
 	if e != nil {
 		fmt.Println("Something went wrong with getting the health")
+		return nil
+	}
+	return jsonString
+}
+
+func getPlaneTypesInRoom(roomId string) []byte {
+	var planeTypes = map[int]string{}
+	mutex.Lock()
+	for playerId, player := range rooms[roomId].players {
+		planeTypes[playerId] = player.planeType
+	}
+	mutex.Unlock()
+	jsonString, e := json.Marshal(planeTypes)
+	if e != nil {
+		fmt.Println("Something went wrong with getting the names")
 		return nil
 	}
 	return jsonString
