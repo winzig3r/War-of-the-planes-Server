@@ -26,8 +26,9 @@ var upgrader = websocket.Upgrader{
 type Player struct {
 	transform     string
 	name          string
-	currentHealth int
 	planeType     string
+	currentHealth int
+	isNew         bool
 	websocket     *websocket.Conn
 	udpConn       net.PacketConn
 	udpAddr       net.Addr
@@ -47,7 +48,7 @@ var namesFileLocation = "names.txt"
 var names []string
 var allPlayerIds []int
 var rooms = map[string]*Room{}
-var playersWithoutRoom = map[int]*websocket.Conn{}
+var playersWithoutRoom = map[int]Player{}
 
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Home Page")
@@ -93,7 +94,6 @@ func setupRoutes() {
 }
 
 func main() {
-	//fmt.Println("Penis123")
 	go startTCP()
 	startUDP()
 }
@@ -132,24 +132,35 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 		mesageType := fmt.Sprintf("%v", message["type"])
 		switch mesageType {
 		case "transformUpdate":
-			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			//fmt.Println("Trying to update transform of player " + strconv.Itoa(pId) + " the new Transform is: " + fmt.Sprintf("%v", message["newTransform"]))
 			mutex.Lock()
 			//Setting the connection data if it is a new Connection
-			if rooms[roomId].players[pId].udpConn == nil {
-				movingPlayer := rooms[roomId].players[pId]
-				movingPlayer.udpConn = udpConnection
-				movingPlayer.udpAddr = addr
-				rooms[roomId].players[pId] = movingPlayer
+
+			if _, roomExists := rooms[roomId]; roomExists {
+				if _, playerExists := rooms[roomId].players[playerId]; playerExists {
+					if rooms[roomId].players[playerId].udpConn == nil {
+						movingPlayer := rooms[roomId].players[playerId]
+						movingPlayer.udpConn = udpConnection
+						movingPlayer.udpAddr = addr
+						rooms[roomId].players[playerId] = movingPlayer
+					}
+					//Udpating the transform
+					modifiedPlayer := rooms[roomId].players[playerId]
+					modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
+					rooms[roomId].players[playerId] = modifiedPlayer
+					mutex.Unlock()
+					//Informing the other clients
+					updateClientTransforms(roomId)
+				} else {
+					fmt.Println("No such player found")
+					mutex.Unlock()
+				}
+			} else {
+				fmt.Println("No such room found")
+				mutex.Unlock()
 			}
-			//Udpating the transform
-			modifiedPlayer := rooms[roomId].players[pId]
-			modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
-			rooms[roomId].players[pId] = modifiedPlayer
-			mutex.Unlock()
-			//Informing the other clients
-			updateClientTransforms(roomId)
 		}
 	}
 }
@@ -171,7 +182,12 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				rand.Seed(time.Now().UnixNano())
 				playerName = names[rand.Intn(len(names)-1)]
 			}
-			newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: startHealth, planeType: planeType}
+			newPlayer := Player{}
+			if playersWithoutRoom[pId].isNew {
+				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[pId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
+			} else {
+				newPlayer = playersWithoutRoom[pId]
+			}
 			playerInfo := map[int]Player{pId: newPlayer}
 			deadPlayers := make(map[int]Player)
 			newRoom := Room{players: playerInfo, deadPlayers: deadPlayers}
@@ -179,8 +195,8 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, pId)
 			mutex.Unlock()
-			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
 			currentPlayer := rooms[newRoomId].players[pId]
+			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
 			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
 		case "joinRoom":
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
@@ -192,9 +208,15 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				rand.Seed(time.Now().UnixNano())
 				playerName = names[rand.Intn(len(names)-1)]
 			}
+
 			if _, ok := rooms[roomId]; ok {
 				//Setting up a new Player Object
-				newPlayer := Player{name: playerName, websocket: playersWithoutRoom[pId], transform: "0", currentHealth: startHealth, planeType: planeType}
+				newPlayer := Player{}
+				if playersWithoutRoom[pId].isNew {
+					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[pId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
+				} else {
+					newPlayer = playersWithoutRoom[pId]
+				}
 				//Moving the new Player Object into the room
 				mutex.Lock()
 				rooms[roomId].players[pId] = newPlayer
@@ -306,19 +328,16 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 func disconnectClient(roomId string, playerId int) {
 	broadcastTCP(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+strconv.Itoa(playerId)+"\"}")
 	mutex.Lock()
-	playersWithoutRoom[playerId] = rooms[roomId].players[playerId].websocket
+	playersWithoutRoom[playerId] = rooms[roomId].players[playerId]
 	delete(rooms[roomId].players, playerId)
 	mutex.Unlock()
-	fmt.Print("Player " + strconv.Itoa(playerId) + " disconnected")
 	//Deleting the room if nobody is in it anymore
 	if len(rooms[roomId].players) == 0 {
 		mutex.Lock()
 		delete(rooms, roomId)
 		mutex.Unlock()
-		fmt.Println(" and room " + roomId + " got deleted because nobody was in it anymore")
 		return
 	}
-	fmt.Println()
 }
 
 func updateClientTransforms(roomId string) {
@@ -405,8 +424,12 @@ func sendUDP(p *Player, message string) {
 func broadcastTCP(roomId string, message string) {
 	connectedPlayers := make(map[int]Player)
 	mutex.Lock()
-	for key, value := range rooms[roomId].players {
-		connectedPlayers[key] = value
+	if _, exists := rooms[roomId]; exists {
+		for key, value := range rooms[roomId].players {
+			connectedPlayers[key] = value
+		}
+	} else {
+		fmt.Println("No such room (" + roomId + ") found")
 	}
 	mutex.Unlock()
 	for _, v := range connectedPlayers {
@@ -419,8 +442,12 @@ func broadcastTCP(roomId string, message string) {
 func broadcastUDP(roomId string, message string) {
 	connectedPlayers := make(map[int]Player)
 	mutex.Lock()
-	for key, value := range rooms[roomId].players {
-		connectedPlayers[key] = value
+	if _, exists := rooms[roomId]; exists {
+		for key, value := range rooms[roomId].players {
+			connectedPlayers[key] = value
+		}
+	} else {
+		fmt.Println("No such room (" + roomId + ") found")
 	}
 	mutex.Unlock()
 	for _, v := range connectedPlayers {
@@ -432,7 +459,7 @@ func handleNewPlayer(conn *websocket.Conn) {
 	newId := getNewPlayerId()
 	conn.WriteMessage(1, []byte("{\"type\":\"setId\", \"newId\":\""+strconv.Itoa(newId)+"\"}"))
 	fmt.Println("Client connected and has now Id: " + strconv.Itoa(newId))
-	playersWithoutRoom[newId] = conn
+	playersWithoutRoom[newId] = Player{websocket: conn, isNew: true}
 }
 
 func getNewPlayerId() int {
