@@ -173,29 +173,34 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 		mesageType := fmt.Sprintf("%v", message["type"])
 		switch mesageType {
 		case "createRoom":
-			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
+			if len(newRoomId) == 0 {
+				affectedPlayer := playersWithoutRoom[playerId]
+				sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"A room with that room Id was already created\",}")
+				return
+			}
 			if len(playerName) == 0 {
 				rand.Seed(time.Now().UnixNano())
 				playerName = names[rand.Intn(len(names)-1)]
 			}
 			newPlayer := Player{}
-			if playersWithoutRoom[pId].isNew {
-				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[pId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
+			if playersWithoutRoom[playerId].isNew {
+				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
 			} else {
-				newPlayer = playersWithoutRoom[pId]
+				newPlayer = playersWithoutRoom[playerId]
 			}
-			playerInfo := map[int]Player{pId: newPlayer}
+			playerInfo := map[int]Player{playerId: newPlayer}
 			deadPlayers := make(map[int]Player)
 			newRoom := Room{players: playerInfo, deadPlayers: deadPlayers}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
-			delete(playersWithoutRoom, pId)
+			delete(playersWithoutRoom, playerId)
 			mutex.Unlock()
-			currentPlayer := rooms[newRoomId].players[pId]
+			currentPlayer := rooms[newRoomId].players[playerId]
 			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
 			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
 		case "joinRoom":
@@ -474,7 +479,14 @@ func getNewPlayerId() int {
 }
 
 func getRandomRoomId() string {
-	return "AAAAAA"
+	mutex.Lock()
+	defer mutex.Unlock()
+	newRoomId := "AAAAAA"
+	if _, ok := rooms[newRoomId]; ok {
+		return ""
+	} else {
+		return newRoomId
+	}
 	/*
 		ENABLE AFTER ENTKÄFERUNG
 		rand.Seed(time.Now().UnixNano())
