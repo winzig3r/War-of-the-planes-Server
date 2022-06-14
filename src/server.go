@@ -34,9 +34,13 @@ type Player struct {
 	udpAddr       net.Addr
 }
 
-type Room struct {
+type RoomBase struct {
 	players     map[int]Player
 	deadPlayers map[int]Player
+}
+
+type RoomDeathMatch struct {
+	roomBase RoomBase
 }
 
 const PORT_UDP = 9535
@@ -47,7 +51,7 @@ var mutex = &sync.Mutex{}
 var namesFileLocation = "names.txt"
 var names []string
 var allPlayerIds []int
-var rooms = map[string]*Room{}
+var rooms = map[string]*RoomBase{}
 var playersWithoutRoom = map[int]Player{}
 
 func homePage(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +199,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
 			deadPlayers := make(map[int]Player)
-			newRoom := Room{players: playerInfo, deadPlayers: deadPlayers}
+			newRoom := RoomBase{players: playerInfo, deadPlayers: deadPlayers}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, playerId)
