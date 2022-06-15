@@ -35,6 +35,7 @@ type Player struct {
 }
 
 type RoomBase struct {
+	sceneIndex  string
 	players     map[int]Player
 	deadPlayers map[int]Player
 }
@@ -158,11 +159,9 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 					//Informing the other clients
 					updateClientTransforms(roomId)
 				} else {
-					fmt.Println("No such player found")
 					mutex.Unlock()
 				}
 			} else {
-				fmt.Println("No such room found")
 				mutex.Unlock()
 			}
 		}
@@ -182,6 +181,8 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
+			selectedWorld := fmt.Sprintf("%v", message["worldIndex"])
+			fmt.Println("Player created room spawning in world: " + selectedWorld)
 			if len(newRoomId) == 0 {
 				affectedPlayer := playersWithoutRoom[playerId]
 				sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"A room with that room Id was already created\",}")
@@ -199,14 +200,14 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
 			deadPlayers := make(map[int]Player)
-			newRoom := RoomBase{players: playerInfo, deadPlayers: deadPlayers}
+			newRoom := RoomBase{players: playerInfo, deadPlayers: deadPlayers, sceneIndex: selectedWorld}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, playerId)
 			mutex.Unlock()
 			currentPlayer := rooms[newRoomId].players[playerId]
 			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
-			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
+			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+selectedWorld+"\"}")
 		case "joinRoom":
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -236,7 +237,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				broadcastTCP(roomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(roomId))+", \"healthValues\":"+string(getHealthInRoom(roomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(roomId))+"}")
 
 				currentPlayer := rooms[roomId].players[pId]
-				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
+				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\"}")
 			} else {
 				currentPlayer := rooms[roomId].players[pId]
 				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
