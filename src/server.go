@@ -164,6 +164,25 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 			} else {
 				mutex.Unlock()
 			}
+		case "shootBulletRequest":
+			//Getting generall information about the bullet
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			bulletType := fmt.Sprintf("%v", message["bulletType"])
+			shooter := fmt.Sprintf("%v", message["shooter"])
+			//Getting the startPositioin
+			startPos := (message["bulletStartPosition"]).([]interface{})
+			startPosVal, _ := json.Marshal(startPos)
+
+			//Getting the starting velocity of the bullet
+			velocity := (message["velocity"]).([]interface{})
+			velocityVal, _ := json.Marshal(velocity)
+
+			//Getting direction the bullet has to fly towards
+			planeFacingDirection := (message["planeFacingDirection"]).([]interface{})
+			planeFacingDirectionVal, _ := json.Marshal(planeFacingDirection)
+
+			//Updating the clients in the room
+			broadcastUDP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\""+bulletType+"\", \"shooter\":\""+shooter+"\", \"startPos\":"+string(startPosVal)+", \"velocity\":"+string(velocityVal)+", \"planeFacingDirection\":"+string(planeFacingDirectionVal)+"}")
 		}
 	}
 }
