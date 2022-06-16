@@ -228,7 +228,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
 			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+selectedWorld+"\"}")
 		case "joinRoom":
-			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
@@ -241,24 +241,24 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			if _, ok := rooms[roomId]; ok {
 				//Setting up a new Player Object
 				newPlayer := Player{}
-				if playersWithoutRoom[pId].isNew {
-					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[pId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
+				if playersWithoutRoom[playerId].isNew {
+					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
 				} else {
-					newPlayer = playersWithoutRoom[pId]
+					newPlayer = playersWithoutRoom[playerId]
 				}
 				//Moving the new Player Object into the room
 				mutex.Lock()
-				rooms[roomId].players[pId] = newPlayer
+				rooms[roomId].players[playerId] = newPlayer
 				//Deleting the playerId out of the playersWithoutRoom
-				delete(playersWithoutRoom, pId)
+				delete(playersWithoutRoom, playerId)
 				mutex.Unlock()
 				//Informing the client itself and the clients who already were in the room
 				broadcastTCP(roomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(roomId))+", \"healthValues\":"+string(getHealthInRoom(roomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(roomId))+"}")
 
-				currentPlayer := rooms[roomId].players[pId]
+				currentPlayer := rooms[roomId].players[playerId]
 				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\"}")
 			} else {
-				currentPlayer := rooms[roomId].players[pId]
+				currentPlayer := playersWithoutRoom[playerId]
 				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
 			}
 		case "rejoin":
