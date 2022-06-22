@@ -40,10 +40,6 @@ type RoomBase struct {
 	deadPlayers map[int]Player
 }
 
-type RoomDeathMatch struct {
-	roomBase RoomBase
-}
-
 const PORT_UDP = 9535
 const PORT_TCP = 9536
 
@@ -216,6 +212,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
 			} else {
 				newPlayer = playersWithoutRoom[playerId]
+				newPlayer.currentHealth = startHealth
+				newPlayer.planeType = planeType
+				newPlayer.name = playerName
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
 			deadPlayers := make(map[int]Player)
@@ -245,6 +244,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
 				} else {
 					newPlayer = playersWithoutRoom[playerId]
+					newPlayer.currentHealth = startHealth
+					newPlayer.planeType = planeType
+					newPlayer.name = playerName
 				}
 				//Moving the new Player Object into the room
 				mutex.Lock()
@@ -272,6 +274,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			delete(rooms[roomId].deadPlayers, playerId)
 			mutex.Unlock()
 			broadcastTCP(roomId, "{\"type\":\"rejoin\", \"playerId\":\""+strconv.Itoa(playerId)+"\", \"newHealth\":\""+strconv.Itoa(newHealth)+"\"}")
+		case "targetLocked":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			broadcastTCP(roomId, string(message_raw))
 		case "shootBulletRequest":
 			//Getting generall information about the bullet
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -361,7 +366,7 @@ func disconnectClient(roomId string, playerId int) {
 	delete(rooms[roomId].players, playerId)
 	mutex.Unlock()
 	//Deleting the room if nobody is in it anymore
-	if len(rooms[roomId].players) == 0 {
+	if len(rooms[roomId].players) == 0 && len(rooms[roomId].deadPlayers) == 0 {
 		mutex.Lock()
 		delete(rooms, roomId)
 		mutex.Unlock()
