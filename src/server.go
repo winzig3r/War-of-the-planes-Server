@@ -36,6 +36,7 @@ type Player struct {
 
 type RoomBase struct {
 	sceneIndex  string
+	roomRules   map[string]string
 	players     map[int]Player
 	deadPlayers map[int]Player
 }
@@ -197,7 +198,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			selectedWorld := fmt.Sprintf("%v", message["worldIndex"])
-			fmt.Println("Player created room spawning in world: " + selectedWorld)
+			gameModeInfo := message["gameModeInfo"].(map[string]interface{})
 			if len(newRoomId) == 0 {
 				affectedPlayer := playersWithoutRoom[playerId]
 				sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"A room with that room Id was already created\",}")
@@ -218,7 +219,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
 			deadPlayers := make(map[int]Player)
-			newRoom := RoomBase{players: playerInfo, deadPlayers: deadPlayers, sceneIndex: selectedWorld}
+			newRoom := RoomBase{players: playerInfo, deadPlayers: deadPlayers, sceneIndex: selectedWorld, roomRules: convertMap(gameModeInfo)}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, playerId)
@@ -232,6 +233,13 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
+			if hasPlayerLimit, _ := strconv.ParseBool(rooms[roomId].roomRules["hasMaxPlayers"]); hasPlayerLimit {
+				if maxPlayerAmount, _ := strconv.Atoi(rooms[roomId].roomRules["maxPlayerCount"]); len(rooms[roomId].players) >= maxPlayerAmount {
+					affectedPlayer := playersWithoutRoom[playerId]
+					sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"The room is full\"}")
+					return
+				}
+			}
 			if len(playerName) == 0 {
 				rand.Seed(time.Now().UnixNano())
 				playerName = names[rand.Intn(len(names)-1)]
@@ -363,7 +371,11 @@ func disconnectClient(roomId string, playerId int) {
 	broadcastTCP(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+strconv.Itoa(playerId)+"\"}")
 	mutex.Lock()
 	playersWithoutRoom[playerId] = rooms[roomId].players[playerId]
+	if playersWithoutRoom[playerId].websocket == nil {
+		playersWithoutRoom[playerId] = rooms[roomId].deadPlayers[playerId]
+	}
 	delete(rooms[roomId].players, playerId)
+	delete(rooms[roomId].deadPlayers, playerId)
 	mutex.Unlock()
 	//Deleting the room if nobody is in it anymore
 	if len(rooms[roomId].players) == 0 && len(rooms[roomId].deadPlayers) == 0 {
@@ -460,7 +472,14 @@ func broadcastTCP(roomId string, message string) {
 	mutex.Lock()
 	if _, exists := rooms[roomId]; exists {
 		for key, value := range rooms[roomId].players {
-			connectedPlayers[key] = value
+			if value.websocket != nil {
+				connectedPlayers[key] = value
+			}
+		}
+		for key, value := range rooms[roomId].deadPlayers {
+			if value.websocket != nil {
+				connectedPlayers[key] = value
+			}
 		}
 	} else {
 		fmt.Println("No such room (" + roomId + ") found")
@@ -487,6 +506,14 @@ func broadcastUDP(roomId string, message string) {
 	for _, v := range connectedPlayers {
 		sendUDP(&v, message)
 	}
+}
+
+func convertMap(ipt map[string]interface{}) map[string]string {
+	out := make(map[string]string)
+	for k, v := range ipt {
+		out[fmt.Sprintf("%v", k)] = fmt.Sprintf("%v", v)
+	}
+	return out
 }
 
 func handleNewPlayer(conn *websocket.Conn) {
