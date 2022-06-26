@@ -28,17 +28,18 @@ type Player struct {
 	name          string
 	planeType     string
 	currentHealth int
+	kills         int
 	isNew         bool
+	isDead        bool
 	websocket     *websocket.Conn
 	udpConn       net.PacketConn
 	udpAddr       net.Addr
 }
 
 type RoomBase struct {
-	sceneIndex  string
-	roomRules   map[string]string
-	players     map[int]Player
-	deadPlayers map[int]Player
+	sceneIndex string
+	roomRules  map[string]string
+	players    map[int]Player
 }
 
 const PORT_UDP = 9535
@@ -210,7 +211,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			newPlayer := Player{}
 			if playersWithoutRoom[playerId].isNew {
-				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
+				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
 			} else {
 				newPlayer = playersWithoutRoom[playerId]
 				newPlayer.currentHealth = startHealth
@@ -218,8 +219,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				newPlayer.name = playerName
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
-			deadPlayers := make(map[int]Player)
-			newRoom := RoomBase{players: playerInfo, deadPlayers: deadPlayers, sceneIndex: selectedWorld, roomRules: convertMap(gameModeInfo)}
+			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, roomRules: convertMap(gameModeInfo)}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, playerId)
@@ -233,6 +233,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
+			//Checking if the room is already full
 			if hasPlayerLimit, _ := strconv.ParseBool(rooms[roomId].roomRules["hasMaxPlayers"]); hasPlayerLimit {
 				if maxPlayerAmount, _ := strconv.Atoi(rooms[roomId].roomRules["maxPlayerCount"]); len(rooms[roomId].players) >= maxPlayerAmount {
 					affectedPlayer := playersWithoutRoom[playerId]
@@ -249,7 +250,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				//Setting up a new Player Object
 				newPlayer := Player{}
 				if playersWithoutRoom[playerId].isNew {
-					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false}
+					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
 				} else {
 					newPlayer = playersWithoutRoom[playerId]
 					newPlayer.currentHealth = startHealth
@@ -266,7 +267,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				broadcastTCP(roomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(roomId))+", \"healthValues\":"+string(getHealthInRoom(roomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(roomId))+"}")
 
 				currentPlayer := rooms[roomId].players[playerId]
-				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\"}")
+				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\"}")
 			} else {
 				currentPlayer := playersWithoutRoom[playerId]
 				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
@@ -276,10 +277,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			newHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["newHealth"]))
 			mutex.Lock()
-			rejoiningPlayer := rooms[roomId].deadPlayers[playerId]
+			rejoiningPlayer := rooms[roomId].players[playerId]
 			rejoiningPlayer.currentHealth = newHealth
-			rooms[roomId].players[playerId] = rejoiningPlayer
-			delete(rooms[roomId].deadPlayers, playerId)
+			rejoiningPlayer.isDead = false
 			mutex.Unlock()
 			broadcastTCP(roomId, "{\"type\":\"rejoin\", \"playerId\":\""+strconv.Itoa(playerId)+"\", \"newHealth\":\""+strconv.Itoa(newHealth)+"\"}")
 		case "targetLocked":
@@ -342,15 +342,36 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 		case "playerDied":
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
-			shooterId := fmt.Sprintf("%v", message["shooterId"])
+			shooterId, _ := strconv.Atoi(fmt.Sprintf("%v", message["shooterId"]))
+			//Updating the kills of the shooter
+			if killer, ok := rooms[roomId].players[shooterId]; ok {
+				if killer.websocket != nil {
+					mutex.Lock()
+					killer.kills += 1
+					fmt.Println("The killer ", shooterId, " has now ", killer.kills, " kills and he needs: ", rooms[roomId].roomRules["killsToWin"], " kills")
+					rooms[roomId].players[shooterId] = killer
+					//Checking if the room has the rule to win with kills
+					if useKills, _ := strconv.ParseBool(rooms[roomId].roomRules["useKills"]); useKills {
+						//If it does, checking if the killer has reached the kill Limit
+						if killsToWin, _ := strconv.Atoi(rooms[roomId].roomRules["killsToWin"]); killer.kills >= killsToWin {
+							//If he reached the limit, informing all the clients about the win/loss
+							fmt.Println("Someone has won the game")
+							broadcastTCP(roomId, "{\"type\":\"GameOver\", \"winnerType\":\"Single\",\"winner\":\""+strconv.Itoa(shooterId)+"\", \"lastKill\":\""+strconv.Itoa(playerId)+"\"}")
+							mutex.Unlock()
+							return
+						}
+					}
+					mutex.Unlock()
+				}
+			}
 			if deadPlayer, ok := rooms[roomId].players[playerId]; ok {
 				if deadPlayer.websocket != nil {
 					mutex.Lock()
-					rooms[roomId].deadPlayers[playerId] = deadPlayer
-					delete(rooms[roomId].players, playerId)
+					deadPlayer.isDead = true
+					rooms[roomId].players[playerId] = deadPlayer
 					mutex.Unlock()
-					sendTCP(&deadPlayer, "{\"type\":\"playerDied\", \"deadPlayer\":\""+strconv.Itoa(playerId)+"\", \"killer\":\""+shooterId+"\"}")
-					broadcastTCP(roomId, "{\"type\":\"playerDied\", \"deadPlayer\":\""+strconv.Itoa(playerId)+"\", \"killer\":\""+shooterId+"\"}")
+					sendTCP(&deadPlayer, "{\"type\":\"playerDied\", \"deadPlayer\":\""+strconv.Itoa(playerId)+"\", \"killer\":\""+strconv.Itoa(shooterId)+"\"}")
+					broadcastTCP(roomId, "{\"type\":\"playerDied\", \"deadPlayer\":\""+strconv.Itoa(playerId)+"\", \"killer\":\""+strconv.Itoa(shooterId)+"\"}")
 				}
 			}
 		case "clientDisconnected":
@@ -371,14 +392,10 @@ func disconnectClient(roomId string, playerId int) {
 	broadcastTCP(roomId, "{\"type\":\"clientDisconnected\", \"Id\":\""+strconv.Itoa(playerId)+"\"}")
 	mutex.Lock()
 	playersWithoutRoom[playerId] = rooms[roomId].players[playerId]
-	if playersWithoutRoom[playerId].websocket == nil {
-		playersWithoutRoom[playerId] = rooms[roomId].deadPlayers[playerId]
-	}
 	delete(rooms[roomId].players, playerId)
-	delete(rooms[roomId].deadPlayers, playerId)
 	mutex.Unlock()
 	//Deleting the room if nobody is in it anymore
-	if len(rooms[roomId].players) == 0 && len(rooms[roomId].deadPlayers) == 0 {
+	if len(rooms[roomId].players) == 0 {
 		mutex.Lock()
 		delete(rooms, roomId)
 		mutex.Unlock()
@@ -476,13 +493,8 @@ func broadcastTCP(roomId string, message string) {
 				connectedPlayers[key] = value
 			}
 		}
-		for key, value := range rooms[roomId].deadPlayers {
-			if value.websocket != nil {
-				connectedPlayers[key] = value
-			}
-		}
 	} else {
-		fmt.Println("No such room (" + roomId + ") found")
+		fmt.Println("No such room (", roomId, ") found in broadcastTCP()")
 	}
 	mutex.Unlock()
 	for _, v := range connectedPlayers {
