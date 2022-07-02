@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,19 +28,23 @@ type Player struct {
 	transform     string
 	name          string
 	planeType     string
+	currentTeam   string
+	playerId      string
 	currentHealth int
 	kills         int
 	isNew         bool
 	isDead        bool
+	isReady       bool
 	websocket     *websocket.Conn
 	udpConn       net.PacketConn
 	udpAddr       net.Addr
 }
 
 type RoomBase struct {
-	sceneIndex string
-	roomRules  map[string]string
-	players    map[int]Player
+	sceneIndex     string
+	roomRules      map[string]string
+	availableTeams []string
+	players        map[int]Player
 }
 
 const PORT_UDP = 9535
@@ -162,25 +167,6 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 			} else {
 				mutex.Unlock()
 			}
-		case "shootBulletRequest":
-			//Getting generall information about the bullet
-			roomId := fmt.Sprintf("%v", message["roomId"])
-			bulletType := fmt.Sprintf("%v", message["bulletType"])
-			shooter := fmt.Sprintf("%v", message["shooter"])
-			//Getting the startPositioin
-			startPos := (message["bulletStartPosition"]).([]interface{})
-			startPosVal, _ := json.Marshal(startPos)
-
-			//Getting the starting velocity of the bullet
-			velocity := (message["velocity"]).([]interface{})
-			velocityVal, _ := json.Marshal(velocity)
-
-			//Getting direction the bullet has to fly towards
-			planeFacingDirection := (message["planeFacingDirection"]).([]interface{})
-			planeFacingDirectionVal, _ := json.Marshal(planeFacingDirection)
-
-			//Updating the clients in the room
-			broadcastUDP(roomId, "{\"type\":\"bulletShot\", \"bulletType\":\""+bulletType+"\", \"shooter\":\""+shooter+"\", \"startPos\":"+string(startPosVal)+", \"velocity\":"+string(velocityVal)+", \"planeFacingDirection\":"+string(planeFacingDirectionVal)+"}")
 		}
 	}
 }
@@ -199,7 +185,8 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			selectedWorld := fmt.Sprintf("%v", message["worldIndex"])
-			gameModeInfo := message["gameModeInfo"].(map[string]interface{})
+			gameModeInfo := convertMap(message["gameModeInfo"].(map[string]interface{}))
+			teams := strings.Split(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(gameModeInfo["teamColors"], "[", ""), "]", ""), "\"", ""), " ")
 			if len(newRoomId) == 0 {
 				affectedPlayer := playersWithoutRoom[playerId]
 				sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"A room with that room Id was already created\",}")
@@ -211,7 +198,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			newPlayer := Player{}
 			if playersWithoutRoom[playerId].isNew {
-				newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
+				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: teams[rand.Intn(len(teams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
 			} else {
 				newPlayer = playersWithoutRoom[playerId]
 				newPlayer.currentHealth = startHealth
@@ -219,13 +206,13 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				newPlayer.name = playerName
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
-			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, roomRules: convertMap(gameModeInfo)}
+			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, availableTeams: teams, roomRules: gameModeInfo}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, playerId)
 			mutex.Unlock()
 			currentPlayer := rooms[newRoomId].players[playerId]
-			broadcastTCP(newRoomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(newRoomId))+", \"healthValues\":"+string(getHealthInRoom(newRoomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(newRoomId))+"}")
+			sendTCP(&currentPlayer, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+newRoom.players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(newRoom.players[playerId].isReady)+"\"}")
 			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+selectedWorld+"\"}")
 		case "joinRoom":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
@@ -250,7 +237,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				//Setting up a new Player Object
 				newPlayer := Player{}
 				if playersWithoutRoom[playerId].isNew {
-					newPlayer = Player{name: playerName, websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
+					newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
 				} else {
 					newPlayer = playersWithoutRoom[playerId]
 					newPlayer.currentHealth = startHealth
@@ -263,15 +250,35 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				//Deleting the playerId out of the playersWithoutRoom
 				delete(playersWithoutRoom, playerId)
 				mutex.Unlock()
-				//Informing the client itself and the clients who already were in the room
-				broadcastTCP(roomId, "{\"type\":\"otherPlayerData\", \"names\":"+string(getNamesInRoom(roomId))+", \"healthValues\":"+string(getHealthInRoom(roomId))+", \"planeTypes\":"+string(getPlaneTypesInRoom(roomId))+"}")
-
+				//Informing the client itself and the clients who already were in the room of the join event
 				currentPlayer := rooms[roomId].players[playerId]
-				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\"}")
+				broadcastTCP(roomId, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+rooms[roomId].players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(rooms[roomId].players[playerId].isReady)+"\"}")
+				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\", \"otherClients\":"+getOtherClientData(roomId)+"}")
 			} else {
 				currentPlayer := playersWithoutRoom[playerId]
 				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
 			}
+		case "ready":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			mutex.Lock()
+			affectedPlayer := rooms[roomId].players[playerId]
+			affectedPlayer.isReady = true
+			rooms[roomId].players[playerId] = affectedPlayer
+			mutex.Unlock()
+			broadcastTCP(roomId, string(message_raw))
+		case "unready":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			mutex.Lock()
+			affectedPlayer := rooms[roomId].players[playerId]
+			affectedPlayer.isReady = true
+			rooms[roomId].players[playerId] = affectedPlayer
+			mutex.Unlock()
+			broadcastTCP(roomId, string(message_raw))
+		case "startGame":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			broadcastTCP(roomId, string(message_raw))
 		case "rejoin":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -280,6 +287,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rejoiningPlayer := rooms[roomId].players[playerId]
 			rejoiningPlayer.currentHealth = newHealth
 			rejoiningPlayer.isDead = false
+			rooms[roomId].players[playerId] = rejoiningPlayer
 			mutex.Unlock()
 			broadcastTCP(roomId, "{\"type\":\"rejoin\", \"playerId\":\""+strconv.Itoa(playerId)+"\", \"newHealth\":\""+strconv.Itoa(newHealth)+"\"}")
 		case "targetLocked":
@@ -355,9 +363,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 						//If it does, checking if the killer has reached the kill Limit
 						if killsToWin, _ := strconv.Atoi(rooms[roomId].roomRules["killsToWin"]); killer.kills >= killsToWin {
 							//If he reached the limit, informing all the clients about the win/loss
+							mutex.Unlock()
 							fmt.Println("Someone has won the game")
 							broadcastTCP(roomId, "{\"type\":\"GameOver\", \"winnerType\":\"Single\",\"winner\":\""+strconv.Itoa(shooterId)+"\", \"lastKill\":\""+strconv.Itoa(playerId)+"\"}")
-							mutex.Unlock()
 							return
 						}
 					}
@@ -378,6 +386,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			disconnectClient(fmt.Sprintf("%v", message["roomId"]), disconnectedPlayerId)
 		case "completeDelete":
+			fmt.Println("A client quit the game")
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			if len(roomId) > 0 {
@@ -408,7 +417,7 @@ func updateClientTransforms(roomId string) {
 	transforms := make(map[int]string)
 	playersCopy := &rooms[roomId].players
 	for k, v := range *playersCopy {
-		if len(v.transform) > 1 && v.websocket != nil {
+		if len(v.transform) > 1 && v.websocket != nil && !v.isDead {
 			transforms[k] = v.transform
 		}
 	}
@@ -421,6 +430,22 @@ func updateClientTransforms(roomId string) {
 	broadcastUDP(roomId, "{\"type\":\"updatePlayerTransform\",\"allPlayerTransformDict\":"+string(jsonString)+"}")
 }
 
+func getOtherClientData(roomId string) string {
+	type clientStruct struct {
+		Id      string
+		Name    string
+		Team    string
+		IsReady bool
+	}
+	allClientData := []clientStruct{}
+	for _, client := range rooms[roomId].players {
+		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, IsReady: client.isReady})
+	}
+	result, _ := json.Marshal(allClientData)
+	return string(result)
+}
+
+/*
 func getNamesInRoom(roomId string) []byte {
 	var playerNames = map[int]string{}
 	mutex.Lock()
@@ -465,7 +490,7 @@ func getPlaneTypesInRoom(roomId string) []byte {
 	}
 	return jsonString
 }
-
+*/
 func sendTCP(p *Player, message string) error {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -532,7 +557,7 @@ func handleNewPlayer(conn *websocket.Conn) {
 	newId := getNewPlayerId()
 	conn.WriteMessage(1, []byte("{\"type\":\"setId\", \"newId\":\""+strconv.Itoa(newId)+"\"}"))
 	fmt.Println("Client connected and has now Id: " + strconv.Itoa(newId))
-	playersWithoutRoom[newId] = Player{websocket: conn, isNew: true}
+	playersWithoutRoom[newId] = Player{websocket: conn, isNew: true, playerId: strconv.Itoa(newId)}
 }
 
 func getNewPlayerId() int {
