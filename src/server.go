@@ -204,6 +204,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				newPlayer.currentHealth = startHealth
 				newPlayer.planeType = planeType
 				newPlayer.name = playerName
+				newPlayer.currentTeam = rooms[newRoomId].availableTeams[rand.Intn(len(rooms[newRoomId].availableTeams))]
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
 			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, availableTeams: teams, roomRules: gameModeInfo}
@@ -243,6 +244,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 					newPlayer.currentHealth = startHealth
 					newPlayer.planeType = planeType
 					newPlayer.name = playerName
+					newPlayer.currentTeam = rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))]
 				}
 				//Moving the new Player Object into the room
 				mutex.Lock()
@@ -272,12 +274,13 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			mutex.Lock()
 			affectedPlayer := rooms[roomId].players[playerId]
-			affectedPlayer.isReady = true
+			affectedPlayer.isReady = false
 			rooms[roomId].players[playerId] = affectedPlayer
 			mutex.Unlock()
 			broadcastTCP(roomId, string(message_raw))
 		case "startGame":
 			roomId := fmt.Sprintf("%v", message["roomId"])
+			fmt.Println("Room", roomId, "wants to start the game")
 			broadcastTCP(roomId, string(message_raw))
 		case "rejoin":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
@@ -383,8 +386,20 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				}
 			}
 		case "clientDisconnected":
+			wasOwner, _ := strconv.ParseBool(fmt.Sprintf("%v", message["wasOwner"]))
+			roomId := fmt.Sprintf("%v", message["roomId"])
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
-			disconnectClient(fmt.Sprintf("%v", message["roomId"]), disconnectedPlayerId)
+			disconnectClient(roomId, disconnectedPlayerId)
+			if wasOwner {
+				newOwner := ""
+				for _, v := range rooms[roomId].players {
+					if v.websocket != nil {
+						newOwner = v.playerId
+						break
+					}
+				}
+				broadcastTCP(roomId, "{\"type\":\"transferOwnership\", \"newOwner\":\""+newOwner+"\"}")
+			}
 		case "completeDelete":
 			fmt.Println("A client quit the game")
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
