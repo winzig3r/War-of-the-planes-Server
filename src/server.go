@@ -45,6 +45,7 @@ type RoomBase struct {
 	roomRules      map[string]string
 	availableTeams []string
 	players        map[int]Player
+	isOpen         bool
 }
 
 const PORT_UDP = 9535
@@ -207,7 +208,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				newPlayer.currentTeam = teams[rand.Intn(len(teams))]
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
-			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, availableTeams: teams, roomRules: gameModeInfo}
+			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, availableTeams: teams, roomRules: gameModeInfo, isOpen: true}
 			mutex.Lock()
 			rooms[newRoomId] = &newRoom
 			delete(playersWithoutRoom, playerId)
@@ -222,10 +223,19 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 
+			//Checking if the room exists
 			if _, ok := rooms[roomId]; !ok {
-				currentPlayer := playersWithoutRoom[playerId]
-				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
+				affectedPlayer := playersWithoutRoom[playerId]
+				sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"A room with id "+roomId+" does not exist\"}")
 				return
+			}
+
+			//Checking if the room is Open
+			if !rooms[roomId].isOpen {
+				affectedPlayer := playersWithoutRoom[playerId]
+				sendTCP(&affectedPlayer, "{\"type\":\"Error\", \"value\":\"The game in this room has already started\"}")
+				return
+
 			}
 
 			//Checking if the room is already full
@@ -282,6 +292,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			broadcastTCP(roomId, string(message_raw))
 		case "startGame":
 			roomId := fmt.Sprintf("%v", message["roomId"])
+			rooms[roomId].isOpen = false
 			fmt.Println("Room", roomId, "wants to start the game")
 			broadcastTCP(roomId, string(message_raw))
 		case "rejoin":
@@ -392,7 +403,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			disconnectedPlayerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			disconnectClient(roomId, disconnectedPlayerId)
-			if wasOwner {
+			if _, ok := rooms[roomId]; ok && wasOwner {
 				newOwner := ""
 				for _, v := range rooms[roomId].players {
 					if v.websocket != nil {
@@ -464,52 +475,6 @@ func getOtherClientData(roomId string) string {
 	return string(result)
 }
 
-/*
-func getNamesInRoom(roomId string) []byte {
-	var playerNames = map[int]string{}
-	mutex.Lock()
-	for playerId, player := range rooms[roomId].players {
-		playerNames[playerId] = player.name
-	}
-	mutex.Unlock()
-	jsonString, e := json.Marshal(playerNames)
-	if e != nil {
-		fmt.Println("Something went wrong with getting the names")
-		return nil
-	}
-	return jsonString
-}
-
-func getHealthInRoom(roomId string) []byte {
-	var allPlayerHealth = map[int]string{}
-	mutex.Lock()
-	for playerId, player := range rooms[roomId].players {
-		allPlayerHealth[playerId] = strconv.Itoa(player.currentHealth)
-	}
-	mutex.Unlock()
-	jsonString, e := json.Marshal(allPlayerHealth)
-	if e != nil {
-		fmt.Println("Something went wrong with getting the health")
-		return nil
-	}
-	return jsonString
-}
-
-func getPlaneTypesInRoom(roomId string) []byte {
-	var planeTypes = map[int]string{}
-	mutex.Lock()
-	for playerId, player := range rooms[roomId].players {
-		planeTypes[playerId] = player.planeType
-	}
-	mutex.Unlock()
-	jsonString, e := json.Marshal(planeTypes)
-	if e != nil {
-		fmt.Println("Something went wrong with getting the names")
-		return nil
-	}
-	return jsonString
-}
-*/
 func sendTCP(p *Player, message string) error {
 	mutex.Lock()
 	defer mutex.Unlock()
