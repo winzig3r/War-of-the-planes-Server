@@ -213,7 +213,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			delete(playersWithoutRoom, playerId)
 			mutex.Unlock()
 			currentPlayer := rooms[newRoomId].players[playerId]
-			sendTCP(&currentPlayer, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+newRoom.players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(newRoom.players[playerId].isReady)+"\"}")
+			sendTCP(&currentPlayer, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+newRoom.players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(newRoom.players[playerId].isReady)+"\", \"PlaneTypes\":\""+planeType+"\"}")
 			sendTCP(&currentPlayer, "{\"type\":\"createdRoom\", \"newRoomId\":\""+newRoomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+selectedWorld+"\"}")
 		case "joinRoom":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
@@ -254,7 +254,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				mutex.Unlock()
 				//Informing the client itself and the clients who already were in the room of the join event
 				currentPlayer := rooms[roomId].players[playerId]
-				broadcastTCP(roomId, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+rooms[roomId].players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(rooms[roomId].players[playerId].isReady)+"\"}")
+				broadcastTCP(roomId, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+rooms[roomId].players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(rooms[roomId].players[playerId].isReady)+"\", \"PlaneTypes\":\""+planeType+"\"}")
 				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\", \"otherClients\":"+getOtherClientData(roomId)+"}")
 			} else {
 				currentPlayer := playersWithoutRoom[playerId]
@@ -447,14 +447,15 @@ func updateClientTransforms(roomId string) {
 
 func getOtherClientData(roomId string) string {
 	type clientStruct struct {
-		Id      string
-		Name    string
-		Team    string
-		IsReady bool
+		Id        string
+		Name      string
+		Team      string
+		PlaneType string
+		IsReady   bool
 	}
 	allClientData := []clientStruct{}
 	for _, client := range rooms[roomId].players {
-		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, IsReady: client.isReady})
+		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, PlaneType: client.planeType, IsReady: client.isReady})
 	}
 	result, _ := json.Marshal(allClientData)
 	return string(result)
