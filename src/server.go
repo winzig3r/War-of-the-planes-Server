@@ -204,7 +204,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				newPlayer.currentHealth = startHealth
 				newPlayer.planeType = planeType
 				newPlayer.name = playerName
-				newPlayer.currentTeam = rooms[newRoomId].availableTeams[rand.Intn(len(rooms[newRoomId].availableTeams))]
+				newPlayer.currentTeam = teams[rand.Intn(len(teams))]
 			}
 			playerInfo := map[int]Player{playerId: newPlayer}
 			newRoom := RoomBase{players: playerInfo, sceneIndex: selectedWorld, availableTeams: teams, roomRules: gameModeInfo}
@@ -221,6 +221,13 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
+
+			if _, ok := rooms[roomId]; !ok {
+				currentPlayer := playersWithoutRoom[playerId]
+				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
+				return
+			}
+
 			//Checking if the room is already full
 			if hasPlayerLimit, _ := strconv.ParseBool(rooms[roomId].roomRules["hasMaxPlayers"]); hasPlayerLimit {
 				if maxPlayerAmount, _ := strconv.Atoi(rooms[roomId].roomRules["maxPlayerCount"]); len(rooms[roomId].players) >= maxPlayerAmount {
@@ -234,32 +241,27 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				playerName = names[rand.Intn(len(names)-1)]
 			}
 
-			if _, ok := rooms[roomId]; ok {
-				//Setting up a new Player Object
-				newPlayer := Player{}
-				if playersWithoutRoom[playerId].isNew {
-					newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
-				} else {
-					newPlayer = playersWithoutRoom[playerId]
-					newPlayer.currentHealth = startHealth
-					newPlayer.planeType = planeType
-					newPlayer.name = playerName
-					newPlayer.currentTeam = rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))]
-				}
-				//Moving the new Player Object into the room
-				mutex.Lock()
-				rooms[roomId].players[playerId] = newPlayer
-				//Deleting the playerId out of the playersWithoutRoom
-				delete(playersWithoutRoom, playerId)
-				mutex.Unlock()
-				//Informing the client itself and the clients who already were in the room of the join event
-				currentPlayer := rooms[roomId].players[playerId]
-				broadcastTCP(roomId, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+rooms[roomId].players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(rooms[roomId].players[playerId].isReady)+"\", \"PlaneType\":\""+planeType+"\", \"PlayerHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
-				sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\", \"otherClients\":"+getOtherClientData(roomId)+"}")
+			//Setting up a new Player Object
+			newPlayer := Player{}
+			if playersWithoutRoom[playerId].isNew {
+				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
 			} else {
-				currentPlayer := playersWithoutRoom[playerId]
-				sendTCP(&currentPlayer, "{\"type\":\"Error\", \"value\":\"NoSuchRoomId\"}")
+				newPlayer = playersWithoutRoom[playerId]
+				newPlayer.currentHealth = startHealth
+				newPlayer.planeType = planeType
+				newPlayer.name = playerName
+				newPlayer.currentTeam = rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))]
 			}
+			//Moving the new Player Object into the room
+			mutex.Lock()
+			rooms[roomId].players[playerId] = newPlayer
+			//Deleting the playerId out of the playersWithoutRoom
+			delete(playersWithoutRoom, playerId)
+			mutex.Unlock()
+			//Informing the client itself and the clients who already were in the room of the join event
+			currentPlayer := rooms[roomId].players[playerId]
+			broadcastTCP(roomId, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+rooms[roomId].players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(rooms[roomId].players[playerId].isReady)+"\", \"PlaneType\":\""+planeType+"\", \"PlayerHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
+			sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\", \"otherClients\":"+getOtherClientData(roomId)+"}")
 		case "ready":
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
