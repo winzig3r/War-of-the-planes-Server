@@ -211,27 +211,6 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				playerName = names[rand.Intn(len(names)-1)]
 			}
 
-			// if _, ok := rooms[roomId]; ok {
-			// 	//Setting up a new Player Object
-			// 	newPlayer := Player{}
-			// 	if playersWithoutRoom[playerId].isNew {
-			// 		newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
-			// 	} else {
-			// 		newPlayer = playersWithoutRoom[playerId]
-			// 		newPlayer.currentHealth = startHealth
-			// 		newPlayer.planeType = planeType
-			// 		newPlayer.name = playerName
-			// 		newPlayer.currentTeam = rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))]
-			// 	}
-			// 	//Moving the new Player Object into the room
-			// 	mutex.Lock()
-			// 	rooms[roomId].players[playerId] = newPlayer
-			// 	//Deleting the playerId out of the playersWithoutRoom
-			// 	delete(playersWithoutRoom, playerId)
-			// 	mutex.Unlock()
-			// 	//Informing the client itself and the clients who already were in the room of the join event
-			// 	currentPlayer := rooms[roomId].players[playerId]
-
 			//Setting up a new Player Object
 			newPlayer := Player{}
 			if playersWithoutRoom[playerId].isNew {
