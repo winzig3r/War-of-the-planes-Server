@@ -145,7 +145,6 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			delete(playersWithoutRoom, playerId)
 			mutex.Unlock()
 			currentPlayer := rooms[newRoomId].players[playerId]
-
 			ccm := ClientConnectedMessage{
 				Id:           playerId,
 				Name:         playerName,
@@ -155,22 +154,18 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				PlayerHealth: newPlayer.currentHealth,
 			}
 			sendTCP(&currentPlayer, getMessage(ccm))
-
 			crm := CreatedRoomMessage{
 				newRoomId:   newRoomId,
 				startHealth: newPlayer.currentHealth,
 				sceneIndex:  selectedWorld,
 			}
-
 			sendTCP(&currentPlayer, getMessage(crm))
-
 		case "joinRoom":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerName := fmt.Sprintf("%v", message["name"])
 			planeType := fmt.Sprintf("%v", message["planeType"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
-
 			//Checking if the room exists
 			if _, ok := rooms[roomId]; !ok {
 				affectedPlayer := playersWithoutRoom[playerId]
@@ -181,18 +176,14 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				sendTCP(&affectedPlayer, getMessage(em))
 				return
 			}
-
 			//Checking if the room is Open
 			if !rooms[roomId].isOpen {
 				affectedPlayer := playersWithoutRoom[playerId]
-
 				em := ErrorMessage{
-					ErrorText: "he game in this room has already started",
+					ErrorText: "the game in this room has already started",
 				}
 				sendTCP(&affectedPlayer, getMessage(em))
-
 				return
-
 			}
 
 			//Checking if the room is already full
@@ -230,8 +221,6 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			mutex.Unlock()
 			//Informing the client itself and the clients who already were in the room of the join event
 			currentPlayer := rooms[roomId].players[playerId]
-			broadcastTCP(roomId, "{\"type\":\"clientConnected\", \"Id\":\""+strconv.Itoa(playerId)+"\", \"Name\":\""+playerName+"\", \"Team\":\""+rooms[roomId].players[playerId].currentTeam+"\", \"IsReady\":\""+strconv.FormatBool(rooms[roomId].players[playerId].isReady)+"\", \"PlaneType\":\""+planeType+"\", \"PlayerHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\"}")
-			sendTCP(&currentPlayer, "{\"type\":\"joinSuccess\", \"newRoomId\":\""+roomId+"\", \"startHealth\":\""+strconv.Itoa(newPlayer.currentHealth)+"\", \"sceneIndex\":\""+rooms[roomId].sceneIndex+"\", \"gameMode\":\""+rooms[roomId].roomRules["gameModeType"]+"\", \"otherClients\":"+getOtherClientData(roomId)+"}")
 
 			ccm := ClientConnectedMessage{
 				Id:           playerId,
