@@ -53,10 +53,6 @@ type RocketShotMessage struct {
 	targetId    string
 }
 
-type Message interface {
-	getMessageJSON() string
-}
-
 func (m RocketShotMessage) getMessageJSON() string {
 	return "{\"type\":\"rocketShot\", \"rocketType\":\"" + m.rocketType + "\", \"shooter\":\"" + m.shooter + "\", \"startPos\":" + m.startPos + ", \"velocity\":" + m.velocity + ", \"facingAngle\":" + m.facingAngle + ", \"targetId\":\"" + m.targetId + "\"}"
 
@@ -84,8 +80,4 @@ func (m ClientConnectedMessage) getMessageJSON() string {
 
 func (m ErrorMessage) getMessageJSON() string {
 	return "{\"type\":\"Error\", \"value\":\"" + m.ErrorText + "\"}"
-}
-
-func getMessage(m Message) string {
-	return m.getMessageJSON()
 }

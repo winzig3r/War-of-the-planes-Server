@@ -29,7 +29,6 @@ func tcpReader(conn *websocket.Conn) {
 			return
 		}
 		decodeClientMessageOnTCP(p)
-		//time.Sleep(10 * time.Millisecond)
 	}
 }
 

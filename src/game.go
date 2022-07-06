@@ -43,14 +43,14 @@ var playersWithoutRoom = map[int]Player{}
 
 var mutex = &sync.Mutex{}
 
-func handleNewPlayer(conn *websocket.Conn) {
+func handleNewPlayer(conn *websocket.Conn) { //This is called as soon as the player connects to the websocket
 	newId := getNewPlayerId()
 	conn.WriteMessage(1, []byte("{\"type\":\"setId\", \"newId\":\""+strconv.Itoa(newId)+"\"}"))
 	fmt.Println("Client connected and has now Id: " + strconv.Itoa(newId))
 	playersWithoutRoom[newId] = Player{websocket: conn, isNew: true, playerId: strconv.Itoa(newId)}
 }
 
-func getNewPlayerId() int {
+func getNewPlayerId() int { //Returns an unique Id for a new player
 	var newId int
 	if len(allPlayerIds) > 0 {
 		newId = allPlayerIds[len(allPlayerIds)-1] + 1
@@ -61,40 +61,42 @@ func getNewPlayerId() int {
 	return allPlayerIds[len(allPlayerIds)-1]
 }
 
-func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, message_raw []byte) {
+func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, message_raw []byte) { //This is called when a message is recived on the udp connection
 	var message map[string]interface{}
 	if json.Unmarshal(message_raw, &message) != nil {
 		fmt.Println("Error decoding Message: " + string(message_raw))
 	} else {
-		mesageType := fmt.Sprintf("%v", message["type"])
-		switch mesageType {
-		case "transformUpdate":
-			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
-			roomId := fmt.Sprintf("%v", message["roomId"])
-			//fmt.Println("Trying to update transform of player " + strconv.Itoa(pId) + " the new Transform is: " + fmt.Sprintf("%v", message["newTransform"]))
-			mutex.Lock()
-			//Setting the connection data if it is a new Connection
+		if messageType, ok := message["type"]; ok {
+			messageType = fmt.Sprintf("%v", messageType)
+			switch messageType {
+			case "transformUpdate":
+				playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
+				roomId := fmt.Sprintf("%v", message["roomId"])
+				//fmt.Println("Trying to update transform of player " + strconv.Itoa(pId) + " the new Transform is: " + fmt.Sprintf("%v", message["newTransform"]))
+				mutex.Lock()
+				//Setting the connection data if it is a new Connection
 
-			if _, roomExists := rooms[roomId]; roomExists {
-				if _, playerExists := rooms[roomId].players[playerId]; playerExists {
-					if rooms[roomId].players[playerId].udpConn == nil {
-						movingPlayer := rooms[roomId].players[playerId]
-						movingPlayer.udpConn = udpConnection
-						movingPlayer.udpAddr = addr
-						rooms[roomId].players[playerId] = movingPlayer
+				if _, roomExists := rooms[roomId]; roomExists {
+					if _, playerExists := rooms[roomId].players[playerId]; playerExists {
+						if rooms[roomId].players[playerId].udpConn == nil {
+							movingPlayer := rooms[roomId].players[playerId]
+							movingPlayer.udpConn = udpConnection
+							movingPlayer.udpAddr = addr
+							rooms[roomId].players[playerId] = movingPlayer
+						}
+						//Udpating the transform
+						modifiedPlayer := rooms[roomId].players[playerId]
+						modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
+						rooms[roomId].players[playerId] = modifiedPlayer
+						mutex.Unlock()
+						//Informing the other clients
+						updateClientTransforms(roomId)
+					} else {
+						mutex.Unlock()
 					}
-					//Udpating the transform
-					modifiedPlayer := rooms[roomId].players[playerId]
-					modifiedPlayer.transform = fmt.Sprintf("%v", message["newTransform"])
-					rooms[roomId].players[playerId] = modifiedPlayer
-					mutex.Unlock()
-					//Informing the other clients
-					updateClientTransforms(roomId)
 				} else {
 					mutex.Unlock()
 				}
-			} else {
-				mutex.Unlock()
 			}
 		}
 	}
@@ -121,7 +123,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				em := ErrorMessage{
 					ErrorText: "A room with that room Id was already created",
 				}
-				sendTCP(&affectedPlayer, getMessage(em))
+				sendTCP(&affectedPlayer, em.getMessageJSON())
 				return
 			}
 			if len(playerName) == 0 {
@@ -153,13 +155,13 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				PlaneType:    planeType,
 				PlayerHealth: newPlayer.currentHealth,
 			}
-			sendTCP(&currentPlayer, getMessage(ccm))
+			sendTCP(&currentPlayer, ccm.getMessageJSON())
 			crm := CreatedRoomMessage{
 				newRoomId:   newRoomId,
 				startHealth: newPlayer.currentHealth,
 				sceneIndex:  selectedWorld,
 			}
-			sendTCP(&currentPlayer, getMessage(crm))
+			sendTCP(&currentPlayer, crm.getMessageJSON())
 		case "joinRoom":
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -173,7 +175,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				em := ErrorMessage{
 					ErrorText: "No room with such Id exists",
 				}
-				sendTCP(&affectedPlayer, getMessage(em))
+				sendTCP(&affectedPlayer, em.getMessageJSON())
 				return
 			}
 			//Checking if the room is Open
@@ -182,7 +184,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				em := ErrorMessage{
 					ErrorText: "the game in this room has already started",
 				}
-				sendTCP(&affectedPlayer, getMessage(em))
+				sendTCP(&affectedPlayer, em.getMessageJSON())
 				return
 			}
 
@@ -193,7 +195,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 					em := ErrorMessage{
 						ErrorText: "The room is full",
 					}
-					sendTCP(&affectedPlayer, getMessage(em))
+					sendTCP(&affectedPlayer, em.getMessageJSON())
 					return
 				}
 			}
@@ -230,7 +232,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				PlaneType:    planeType,
 				PlayerHealth: newPlayer.currentHealth,
 			}
-			broadcastTCP(roomId, getMessage(ccm))
+			broadcastTCP(roomId, ccm.getMessageJSON())
 
 			jsm := JoinSuccessMessage{
 				newRoomId:    roomId,
@@ -240,7 +242,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				otherClients: getOtherClientData(roomId),
 			}
 
-			sendTCP(&currentPlayer, getMessage(jsm))
+			sendTCP(&currentPlayer, jsm.getMessageJSON())
 
 		case "ready":
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -280,7 +282,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				playerId:  playerId,
 				newHealth: newHealth,
 			}
-			broadcastTCP(roomId, getMessage(rjm))
+			broadcastTCP(roomId, rjm.getMessageJSON())
 
 		case "targetLocked":
 			roomId := fmt.Sprintf("%v", message["roomId"])
@@ -310,7 +312,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				velocity:             string(velocityVal),
 				planeFacingDirection: string(planeFacingDirectionVal),
 			}
-			broadcastTCP(roomId, getMessage((bsm)))
+			broadcastTCP(roomId, bsm.getMessageJSON())
 
 		case "shootRocketRequest":
 			//Getting the Id of the room the bullet was shoot in
@@ -342,7 +344,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				facingAngle: string(planeFacingDirectionVal),
 				targetId:    target,
 			}
-			broadcastTCP(roomId, getMessage(rsm))
+			broadcastTCP(roomId, rsm.getMessageJSON())
 
 		case "playerHit":
 			roomId := fmt.Sprintf("%v", message["roomId"])
