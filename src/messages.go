@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -80,7 +79,6 @@ func (m CreatedRoomMessage) getMessageJSON() string {
 
 func (m ClientConnectedMessage) getMessageJSON() string {
 	message := "{\"type\":\"clientConnected\", \"Id\":\"" + strconv.Itoa(m.Id) + "\", \"Name\":\"" + m.Name + "\", \"Team\":\"" + m.Team + "\", \"IsReady\":\"" + strconv.FormatBool(m.IsReady) + "\", \"PlaneTypes\":" + m.PlaneTypes + ", \"PlayerHealth\":\"" + strconv.Itoa(m.PlayerHealth) + "\"}"
-	fmt.Println("Sending message:", message)
 	return message
 }
 

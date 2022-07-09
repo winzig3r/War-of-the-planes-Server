@@ -64,7 +64,7 @@ func getNewPlayerId() int { //Returns an unique Id for a new player
 func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, message_raw []byte) { //This is called when a message is recived on the udp connection
 	var message map[string]interface{}
 	if json.Unmarshal(message_raw, &message) != nil {
-		fmt.Println("Error decoding Message: " + string(message_raw))
+		fmt.Println("Error decoding Message on UDP: " + string(message_raw))
 	} else {
 		if messageType, ok := message["type"]; ok {
 			messageType = fmt.Sprintf("%v", messageType)
@@ -105,15 +105,16 @@ func decodeClientMessageOnUDP(udpConnection net.PacketConn, addr net.Addr, messa
 func decodeClientMessageOnTCP(message_raw []byte) {
 	var message map[string]interface{}
 	if json.Unmarshal(message_raw, &message) != nil {
-		fmt.Println("Error decoding Message: " + string(message_raw))
+		fmt.Println("Error decoding Message on TCP: " + string(message_raw))
 	} else {
 		mesageType := fmt.Sprintf("%v", message["type"])
 		switch mesageType {
 		case "createRoom":
-			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
-			planeTypes := fmt.Sprintf("%v", message["planeTypes"])
+			planeTypesByte, _ := json.Marshal(message["planeTypes"])
+			planeTypes := string(planeTypesByte)
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			selectedWorld := fmt.Sprintf("%v", message["worldIndex"])
 			gameModeInfo := convertMap(message["gameModeInfo"].(map[string]interface{}))
@@ -163,10 +164,11 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			sendTCP(&currentPlayer, crm.getMessageJSON())
 		case "joinRoom":
-			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
+			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerName := fmt.Sprintf("%v", message["name"])
-			planeType := fmt.Sprintf("%v", message["planeType"])
+			planeTypesByte, _ := json.Marshal(message["planeTypes"])
+			planeTypes := string(planeTypesByte)
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			//Checking if the room exists
 			if _, ok := rooms[roomId]; !ok {
@@ -207,11 +209,11 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			//Setting up a new Player Object
 			newPlayer := Player{}
 			if playersWithoutRoom[playerId].isNew {
-				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeTypes: planeType, isNew: false, kills: 0}
+				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeTypes: planeTypes, isNew: false, kills: 0}
 			} else {
 				newPlayer = playersWithoutRoom[playerId]
 				newPlayer.currentHealth = startHealth
-				newPlayer.planeTypes = planeType
+				newPlayer.planeTypes = planeTypes
 				newPlayer.name = playerName
 				newPlayer.currentTeam = rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))]
 			}
@@ -229,7 +231,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				Name:         playerName,
 				Team:         rooms[roomId].players[playerId].currentTeam,
 				IsReady:      rooms[roomId].players[playerId].isReady,
-				PlaneTypes:   planeType,
+				PlaneTypes:   planeTypes,
 				PlayerHealth: newPlayer.currentHealth,
 			}
 			broadcastTCP(roomId, ccm.getMessageJSON())
@@ -459,13 +461,14 @@ func getOtherClientData(roomId string) string {
 		Id           string
 		Name         string
 		Team         string
-		PlaneType    string
+		PlaneTypes   []string
 		PlayerHealth int
 		IsReady      bool
 	}
 	allClientData := []clientStruct{}
 	for _, client := range rooms[roomId].players {
-		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, PlaneType: client.planeTypes, PlayerHealth: client.currentHealth, IsReady: client.isReady})
+		planeTypes := strings.Split(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(client.planeTypes, "\"", ""), "[", ""), "]", ""), ",")
+		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, PlaneTypes: planeTypes, PlayerHealth: client.currentHealth, IsReady: client.isReady})
 	}
 	result, _ := json.Marshal(allClientData)
 	return string(result)
