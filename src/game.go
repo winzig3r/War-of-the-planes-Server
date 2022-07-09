@@ -16,9 +16,9 @@ import (
 type Player struct {
 	transform     string
 	name          string
-	planeType     string
 	currentTeam   string
 	playerId      string
+	planeTypes    string
 	currentHealth int
 	kills         int
 	isNew         bool
@@ -113,7 +113,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["Id"]))
 			newRoomId := getRandomRoomId()
 			playerName := fmt.Sprintf("%v", message["name"])
-			planeType := fmt.Sprintf("%v", message["planeType"])
+			planeTypes := fmt.Sprintf("%v", message["planeTypes"])
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			selectedWorld := fmt.Sprintf("%v", message["worldIndex"])
 			gameModeInfo := convertMap(message["gameModeInfo"].(map[string]interface{}))
@@ -132,11 +132,11 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			}
 			newPlayer := Player{}
 			if playersWithoutRoom[playerId].isNew {
-				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: teams[rand.Intn(len(teams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
+				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: teams[rand.Intn(len(teams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeTypes: planeTypes, isNew: false, kills: 0}
 			} else {
 				newPlayer = playersWithoutRoom[playerId]
 				newPlayer.currentHealth = startHealth
-				newPlayer.planeType = planeType
+				newPlayer.planeTypes = planeTypes
 				newPlayer.name = playerName
 				newPlayer.currentTeam = teams[rand.Intn(len(teams))]
 			}
@@ -152,7 +152,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				Name:         playerName,
 				Team:         newRoom.players[playerId].currentTeam,
 				IsReady:      newRoom.players[playerId].isReady,
-				PlaneType:    planeType,
+				PlaneTypes:   planeTypes,
 				PlayerHealth: newPlayer.currentHealth,
 			}
 			sendTCP(&currentPlayer, ccm.getMessageJSON())
@@ -207,11 +207,11 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			//Setting up a new Player Object
 			newPlayer := Player{}
 			if playersWithoutRoom[playerId].isNew {
-				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeType: planeType, isNew: false, kills: 0}
+				newPlayer = Player{playerId: playersWithoutRoom[playerId].playerId, name: playerName, currentTeam: rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))], websocket: playersWithoutRoom[playerId].websocket, transform: "0", currentHealth: startHealth, planeTypes: planeType, isNew: false, kills: 0}
 			} else {
 				newPlayer = playersWithoutRoom[playerId]
 				newPlayer.currentHealth = startHealth
-				newPlayer.planeType = planeType
+				newPlayer.planeTypes = planeType
 				newPlayer.name = playerName
 				newPlayer.currentTeam = rooms[roomId].availableTeams[rand.Intn(len(rooms[roomId].availableTeams))]
 			}
@@ -229,7 +229,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				Name:         playerName,
 				Team:         rooms[roomId].players[playerId].currentTeam,
 				IsReady:      rooms[roomId].players[playerId].isReady,
-				PlaneType:    planeType,
+				PlaneTypes:   planeType,
 				PlayerHealth: newPlayer.currentHealth,
 			}
 			broadcastTCP(roomId, ccm.getMessageJSON())
@@ -465,7 +465,7 @@ func getOtherClientData(roomId string) string {
 	}
 	allClientData := []clientStruct{}
 	for _, client := range rooms[roomId].players {
-		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, PlaneType: client.planeType, PlayerHealth: client.currentHealth, IsReady: client.isReady})
+		allClientData = append(allClientData, clientStruct{Id: client.playerId, Name: client.name, Team: client.currentTeam, PlaneType: client.planeTypes, PlayerHealth: client.currentHealth, IsReady: client.isReady})
 	}
 	result, _ := json.Marshal(allClientData)
 	return string(result)

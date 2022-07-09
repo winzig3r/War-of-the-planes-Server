@@ -1,6 +1,9 @@
 package main
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 type ErrorMessage struct {
 	ErrorText string
@@ -11,7 +14,7 @@ type ClientConnectedMessage struct {
 	Name         string
 	Team         string
 	IsReady      bool
-	PlaneType    string
+	PlaneTypes   string
 	PlayerHealth int
 }
 
@@ -71,11 +74,14 @@ func (m JoinSuccessMessage) getMessageJSON() string {
 }
 
 func (m CreatedRoomMessage) getMessageJSON() string {
-	return "{\"type\":\"createdRoom\", \"newRoomId\":\"" + m.newRoomId + "\", \"startHealth\":\"" + strconv.Itoa(m.startHealth) + "\", \"sceneIndex\":\"" + m.sceneIndex + "\"}"
+	message := "{\"type\":\"createdRoom\", \"newRoomId\":\"" + m.newRoomId + "\", \"startHealth\":\"" + strconv.Itoa(m.startHealth) + "\", \"sceneIndex\":\"" + m.sceneIndex + "\"}"
+	return message
 }
 
 func (m ClientConnectedMessage) getMessageJSON() string {
-	return "{\"type\":\"clientConnected\", \"Id\":\"" + strconv.Itoa(m.Id) + "\", \"Name\":\"" + m.Name + "\", \"Team\":\"" + m.Team + "\", \"IsReady\":\"" + strconv.FormatBool(m.IsReady) + "\", \"PlaneType\":\"" + m.PlaneType + "\", \"PlayerHealth\":\"" + strconv.Itoa(m.PlayerHealth) + "\"}"
+	message := "{\"type\":\"clientConnected\", \"Id\":\"" + strconv.Itoa(m.Id) + "\", \"Name\":\"" + m.Name + "\", \"Team\":\"" + m.Team + "\", \"IsReady\":\"" + strconv.FormatBool(m.IsReady) + "\", \"PlaneTypes\":" + m.PlaneTypes + ", \"PlayerHealth\":\"" + strconv.Itoa(m.PlayerHealth) + "\"}"
+	fmt.Println("Sending message:", message)
+	return message
 }
 
 func (m ErrorMessage) getMessageJSON() string {
