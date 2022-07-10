@@ -4,32 +4,36 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
+	"strings"
+	"time"
 )
 
 func getRandomRoomId() string {
 	mutex.Lock()
 	defer mutex.Unlock()
-	newRoomId := "AAAAAA"
-	if _, ok := rooms[newRoomId]; ok {
-		return ""
-	} else {
-		return newRoomId
-	}
 	/*
-		ENABLE AFTER ENTKÄFERUNG
-		rand.Seed(time.Now().UnixNano())
-		alphabet := strings.ToUpper("abcdefghijklmnopqrstuvwxyz")
-		roomId := ""
-		for i := 0; i < 6; i++ {
-			roomId = roomId + string(alphabet[rand.Intn(len(alphabet)-1)])
-		}
-		if _, ok := rooms[roomId]; ok {
-			return getRandomRoomId()
+		newRoomId := "AAAAAA"
+		if _, ok := rooms[newRoomId]; ok {
+			return ""
 		} else {
-			return roomId
+			return newRoomId
 		}
 	*/
+	//ENABLE AFTER ENTKÄFERUNG
+	rand.Seed(time.Now().UnixNano())
+	alphabet := strings.ToUpper("abcdefghijklmnopqrstuvwxyz")
+	roomId := ""
+	for i := 0; i < 6; i++ {
+		roomId = roomId + string(alphabet[rand.Intn(len(alphabet)-1)])
+	}
+	if _, ok := rooms[roomId]; ok {
+		return getRandomRoomId()
+	} else {
+		return roomId
+	}
+
 }
 
 func convertMap(ipt map[string]interface{}) map[string]string {
