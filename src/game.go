@@ -411,6 +411,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 				}
 				broadcastTCP(roomId, "{\"type\":\"transferOwnership\", \"newOwner\":\""+newOwner+"\"}")
 			}
+		case "transferOwnership":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			broadcastTCP(roomId, string(message_raw))
 		case "completeDelete":
 			fmt.Println("A client quit the game")
 			pId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
