@@ -39,7 +39,7 @@ type RejoinMessage struct {
 type BulletShotMessage struct {
 	bulletType           string
 	shooter              string
-	startPos             string
+	gunName              string
 	velocity             string
 	planeFacingDirection string
 }
@@ -49,19 +49,19 @@ type BulletShotMessage struct {
 type RocketShotMessage struct {
 	rocketType  string
 	shooter     string
-	startPos    string
+	gunName     string
 	velocity    string
 	facingAngle string
 	targetId    string
 }
 
 func (m RocketShotMessage) getMessageJSON() string {
-	return "{\"type\":\"rocketShot\", \"rocketType\":\"" + m.rocketType + "\", \"shooter\":\"" + m.shooter + "\", \"startPos\":" + m.startPos + ", \"velocity\":" + m.velocity + ", \"facingAngle\":" + m.facingAngle + ", \"targetId\":\"" + m.targetId + "\"}"
+	return "{\"type\":\"rocketShot\", \"rocketType\":\"" + m.rocketType + "\", \"shooter\":\"" + m.shooter + "\", \"gunName\":\"" + m.gunName + "\", \"velocity\":" + m.velocity + ", \"facingAngle\":" + m.facingAngle + ", \"targetId\":\"" + m.targetId + "\"}"
 
 }
 
 func (m BulletShotMessage) getMessageJSON() string {
-	return "{\"type\":\"bulletShot\", \"bulletType\":\"" + m.bulletType + "\", \"shooter\":\"" + m.shooter + "\", \"startPos\":" + m.startPos + ", \"velocity\":" + m.velocity + ", \"planeFacingDirection\":" + m.planeFacingDirection + "}"
+	return "{\"type\":\"bulletShot\", \"bulletType\":\"" + m.bulletType + "\", \"shooter\":\"" + m.shooter + "\", \"gunName\":\"" + m.gunName + "\", \"velocity\":" + m.velocity + ", \"planeFacingDirection\":" + m.planeFacingDirection + "}"
 }
 
 func (m RejoinMessage) getMessageJSON() string {

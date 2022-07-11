@@ -264,6 +264,9 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rooms[roomId].players[playerId] = affectedPlayer
 			mutex.Unlock()
 			broadcastTCP(roomId, string(message_raw))
+		case "changeTeam":
+			roomId := fmt.Sprintf("%v", message["roomId"])
+			broadcastTCP(roomId, string(message_raw))
 		case "startGame":
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			rooms[roomId].isOpen = false
@@ -294,9 +297,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			bulletType := fmt.Sprintf("%v", message["bulletType"])
 			shooter := fmt.Sprintf("%v", message["shooter"])
-			//Getting the startPositioin
-			startPos := (message["bulletStartPosition"]).([]interface{})
-			startPosVal, _ := json.Marshal(startPos)
+			gunName := fmt.Sprintf("%v", message["gunName"])
 
 			//Getting the starting velocity of the bullet
 			velocity := (message["velocity"]).([]interface{})
@@ -310,7 +311,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			bsm := BulletShotMessage{
 				bulletType:           bulletType,
 				shooter:              shooter,
-				startPos:             string(startPosVal),
+				gunName:              gunName,
 				velocity:             string(velocityVal),
 				planeFacingDirection: string(planeFacingDirectionVal),
 			}
@@ -322,10 +323,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rocketType := fmt.Sprintf("%v", message["rocketType"])
 			shooter := fmt.Sprintf("%v", message["shooter"])
 			target := fmt.Sprintf("%v", message["target"])
-
-			//Getting the start Position to know where the rocket needs to be spawned
-			startPos := (message["bulletStartPosition"]).([]interface{})
-			startPosVal, _ := json.Marshal(startPos)
+			gunName := fmt.Sprintf("%v", message["gunName"])
 
 			//Getting the starting velocity of the rocket
 			velocity := (message["velocity"]).([]interface{})
@@ -341,7 +339,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rsm := RocketShotMessage{
 				rocketType:  rocketType,
 				shooter:     shooter,
-				startPos:    string(startPosVal),
+				gunName:     gunName,
 				velocity:    string(velocityVal),
 				facingAngle: string(planeFacingDirectionVal),
 				targetId:    target,
