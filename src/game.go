@@ -118,7 +118,12 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			startHealth, _ := strconv.Atoi(fmt.Sprintf("%v", message["startHealth"]))
 			selectedWorld := fmt.Sprintf("%v", message["worldIndex"])
 			gameModeInfo := convertMap(message["gameModeInfo"].(map[string]interface{}))
-			teams := strings.Split(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(gameModeInfo["teamColors"], "[", ""), "]", ""), "\"", ""), " ")
+			var teams []string
+			if hasTeams, _ := strconv.ParseBool(gameModeInfo["hasTeams"]); hasTeams {
+				teams = strings.Split(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(gameModeInfo["teamColors"], "[", ""), "]", ""), "\"", ""), " ")
+			} else {
+				teams = append(teams, "All Players")
+			}
 			if len(newRoomId) == 0 {
 				affectedPlayer := playersWithoutRoom[playerId]
 				em := ErrorMessage{
@@ -297,7 +302,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			bulletType := fmt.Sprintf("%v", message["bulletType"])
 			shooter := fmt.Sprintf("%v", message["shooter"])
-			gunName := fmt.Sprintf("%v", message["gunName"])
+			gunIndex := fmt.Sprintf("%v", message["gunIndex"])
 
 			//Getting the starting velocity of the bullet
 			velocity := (message["velocity"]).([]interface{})
@@ -311,7 +316,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			bsm := BulletShotMessage{
 				bulletType:           bulletType,
 				shooter:              shooter,
-				gunName:              gunName,
+				gunIndex:             gunIndex,
 				velocity:             string(velocityVal),
 				planeFacingDirection: string(planeFacingDirectionVal),
 			}
