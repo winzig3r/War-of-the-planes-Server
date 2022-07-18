@@ -328,7 +328,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rocketType := fmt.Sprintf("%v", message["rocketType"])
 			shooter := fmt.Sprintf("%v", message["shooter"])
 			target := fmt.Sprintf("%v", message["target"])
-			gunName := fmt.Sprintf("%v", message["gunName"])
+			gunIndex := fmt.Sprintf("%v", message["gunIndex"])
 
 			//Getting the starting velocity of the rocket
 			velocity := (message["velocity"]).([]interface{})
@@ -344,7 +344,7 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			rsm := RocketShotMessage{
 				rocketType:  rocketType,
 				shooter:     shooter,
-				gunName:     gunName,
+				gunIndex:    gunIndex,
 				velocity:    string(velocityVal),
 				facingAngle: string(planeFacingDirectionVal),
 				targetId:    target,
@@ -368,15 +368,18 @@ func decodeClientMessageOnTCP(message_raw []byte) {
 			roomId := fmt.Sprintf("%v", message["roomId"])
 			playerId, _ := strconv.Atoi(fmt.Sprintf("%v", message["playerId"]))
 			shooterId, _ := strconv.Atoi(fmt.Sprintf("%v", message["shooterId"]))
+			isSuicide, _ := strconv.ParseBool(fmt.Sprintf("%v", message["isSuicide"]))
 			//Updating the kills of the shooter
 			if killer, ok := rooms[roomId].players[shooterId]; ok {
 				if killer.websocket != nil {
 					mutex.Lock()
-					killer.kills += 1
-					fmt.Println("The killer ", shooterId, " has now ", killer.kills, " kills and he needs: ", rooms[roomId].roomRules["killsToWin"], " kills")
+					if !isSuicide {
+						killer.kills += 1
+					}
 					rooms[roomId].players[shooterId] = killer
 					//Checking if the room has the rule to win with kills
 					if useKills, _ := strconv.ParseBool(rooms[roomId].roomRules["useKills"]); useKills {
+						fmt.Println("The killer ", shooterId, " has now ", killer.kills, " kills and he needs: ", rooms[roomId].roomRules["killsToWin"], " kills")
 						//If it does, checking if the killer has reached the kill Limit
 						if killsToWin, _ := strconv.Atoi(rooms[roomId].roomRules["killsToWin"]); killer.kills >= killsToWin {
 							//If he reached the limit, informing all the clients about the win/loss

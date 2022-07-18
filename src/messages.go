@@ -49,14 +49,14 @@ type BulletShotMessage struct {
 type RocketShotMessage struct {
 	rocketType  string
 	shooter     string
-	gunName     string
+	gunIndex    string
 	velocity    string
 	facingAngle string
 	targetId    string
 }
 
 func (m RocketShotMessage) getMessageJSON() string {
-	return "{\"type\":\"rocketShot\", \"rocketType\":\"" + m.rocketType + "\", \"shooter\":\"" + m.shooter + "\", \"gunName\":\"" + m.gunName + "\", \"velocity\":" + m.velocity + ", \"facingAngle\":" + m.facingAngle + ", \"targetId\":\"" + m.targetId + "\"}"
+	return "{\"type\":\"rocketShot\", \"rocketType\":\"" + m.rocketType + "\", \"shooter\":\"" + m.shooter + "\", \"gunIndex\":\"" + m.gunIndex + "\", \"velocity\":" + m.velocity + ", \"facingAngle\":" + m.facingAngle + ", \"targetId\":\"" + m.targetId + "\"}"
 
 }
 
